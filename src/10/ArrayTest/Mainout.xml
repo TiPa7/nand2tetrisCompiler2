@@ -242,8 +242,6 @@
 </expressionList>
 <symbol>)</symbol>
 </term>
-<doStatement>
-<keyword>do</keyword>
 <symbol>;</symbol>
 </doStatement>
 <doStatement>
@@ -265,8 +263,6 @@
 </expressionList>
 <symbol>)</symbol>
 </term>
-<doStatement>
-<keyword>do</keyword>
 <symbol>;</symbol>
 </doStatement>
 <doStatement>
