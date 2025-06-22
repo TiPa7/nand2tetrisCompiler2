@@ -1,0 +1,2 @@
+{:paths ["src"
+         "lib/math.combinatorics-master/src/main/clojure"]}
