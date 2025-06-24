@@ -51,7 +51,6 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-</term>
 </expression>
 <symbol>;</symbol>
 </letStatement>
@@ -73,7 +72,6 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-</term>
 </expression>
 <symbol>;</symbol>
 </letStatement>
@@ -128,7 +126,6 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-</term>
 </expression>
 <symbol>;</symbol>
 </letStatement>
@@ -241,7 +238,6 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-</term>
 <symbol>;</symbol>
 </doStatement>
 <doStatement>
@@ -262,7 +258,6 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-</term>
 <symbol>;</symbol>
 </doStatement>
 <doStatement>
@@ -274,7 +269,6 @@
 <expressionList>
 </expressionList>
 <symbol>)</symbol>
-</term>
 <symbol>;</symbol>
 </doStatement>
 <returnStatement>
