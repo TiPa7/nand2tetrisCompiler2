@@ -65,6 +65,7 @@
 </statements>
 <symbol>}</symbol>
 </subroutineBody>
+</subroutineDec>
 <subroutineDec>
 <keyword>function</keyword>
 <keyword>void</keyword>
@@ -92,13 +93,16 @@
 </expression>
 <symbol>)</symbol>
 <symbol>{</symbol>
-</statements></statements>
+<statements>
+</statements>
 <symbol>}</symbol>
 <keyword>else</keyword>
 <symbol>{</symbol>
 <statements>
 </statements>
-</ifStatement><returnStatement>
+<symbol>}</symbol>
+</ifStatement>
+<returnStatement>
 <keyword>return</keyword>
 <symbol>;</symbol>
 </returnStatement>

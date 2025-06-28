@@ -51,6 +51,7 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
+</term>
 </expression>
 <symbol>;</symbol>
 </letStatement>
@@ -72,6 +73,7 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
+</term>
 </expression>
 <symbol>;</symbol>
 </letStatement>
@@ -126,6 +128,7 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
+</term>
 </expression>
 <symbol>;</symbol>
 </letStatement>
@@ -273,8 +276,6 @@
 </doStatement>
 <returnStatement>
 <keyword>return</keyword>
-<expression>
-</expression>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
