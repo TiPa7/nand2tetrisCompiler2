@@ -660,10 +660,34 @@
     ))
 
 
+;(defn compile-single-class-var-dec
+;  "Returns XML for one class-var-dec"
+;  [[what type name & r]]
+;  (let [start ["<classVarDec>\n"]
+;        what-xml ["<keyword>" what "</keyword>\n"]
+;        type-xml (if (re-matches #"int|char|boolean" type) ["<keyword>" type "</keyword>\n"] ["<identifier>" type "</identifier>\n"])
+;        var-name-xml ["<identifier>" name "</identifier>\n"]
+;        middle (loop [[t1 t2 & re] r
+;                      xml []]
+;                 (if (= ";" t1)
+;                   (into xml ["<symbol>;</symbol>\n"])
+;                   (recur re (into xml ["<symbol>" "," "</symbol>\n" "<identifier>" t2 "</identifier>\n"])))
+;                 )
+;        end ["</classVarDec>\n"]]
+;    (into start (into what-xml (into type-xml (into var-name-xml (into middle end)))))))
+;
+;(compile-single-class-var-dec ["static" "int" "hello" "," "world" "," "is" "," "outdated" ";"])
+
 
 (defn compile-class-var-dec
   "Returns [remaining-code xml-lines]"
   [[current & remaining :as full-code] xml-lines]
+
+  ;(let [blocks (doall (split-with #(= ";" %) full-code))
+  ;      decs (doall (take-while #(complement (re-matches #"static|field" (first %))) blocks))
+  ;      dec-xml (concat (map compile-single-class-var-dec decs))]
+  ;  dec-xml
+  ;  )
 
   (cond
     (re-matches #"static|field" current) (recur remaining (into xml-lines ["<classVarDec>\n" "<keyword>" current "</keyword>\n"]))
@@ -747,8 +771,6 @@
 ;;;;;;;;;;;;;;;;;;
 ;;; Aus Compiler 1
 ;;;;;;;;;;;;;;;;;;
-
-
 (defn result-xml-to-file
   [file-path coll]
   (let [output-path (str/replace file-path #"\.jack$" "out.xml")]
@@ -765,6 +787,60 @@
   (write-tokenizer-to-file (first args))
   (compile-jack (first args)))
 
+;;;;;;;;;;;;;;;;;
+;; ArrayTest
+;;;;;;;;;;;;;;;;;
+
+; Klappt ENDLICH :DD
+; diff -w Main.xml Mainout.xml
+; IST LEER (ausführen im Ordner ArrayTest)
+(compile-jack "src/10/ArrayTest/Main.jack")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;
+;; ExpressionLessSquare
+;;;;;;;;;;;;;;;;;;;;;;;
+
+; Klappt auch recht flott: Bei if-statement hat } gefehlt und bei mehreren subroutineDecs muss der body auch die dec in der
+; "falschen" rekursiven Variante schließen
+; Ausführen im Ordern ExpressionLessSquare
+; diff -w Main.xml Mainout.xml
+(compile-jack "src/10/ExpressionLessSquare/Main.jack")
+
+; diff -w Square.xml Squareout.xml
+; Nur ein kleiner Fehler: Bei simple-term muss es keyword heißen, nicht keywordConstant :D
+(compile-jack "src/10/ExpressionLessSquare/Square.jack")
+
+; diff -w SquareGame.xml SquareGameout.xml
+; Klappt sofort (na endlich)
+(compile-jack "src/10/ExpressionLessSquare/SquareGame.jack")
+
+
+;;;;;;;;;;;;;;;;;
+;; Square
+;;;;;;;;;;;;;;;;;
+
+; Hier bekommen wir noch den Fehler, dass compile-term zu viele (19)
+; Lag an dem Fall 1 in compile-term
+
+
+
+; diff -w Main.xml Mainout.xml
+; An zwei Stellen <expression> bzw </expression> statt <term> bzw. </term>
+; Problem war, dass compile-term bei unary term nicht geöffnet hat und Aufruf von compile-term an einer Stelle
+; noch eine expression geöffnet hat
+(compile-jack "src/10/Square/Main.jack")
+
+; diff -w Square.xml Squareout.xml
+; Problem war, wie Lukas es gesagt hat: Rekurisver Aufruf bei compile-term der völlig unnötig ist.
+; Dadurch wurde das nächste - Token bei sowas wie let size = size - 2; als unary op erkannt, obwohl es ein
+; op in einer term (op term) - Darstellung war.
+(compile-jack "src/10/Square/Square.jack")
+
+; diff -w SquareGame.xml SquareGameout.xml
+; Problem war: unary-op regex hat nach unary-op noch term geschlossen
+; und es wurde der term dafür zu früh geschlossen
+(compile-jack "src/10/Square/SquareGame.jack")
 
 
 
@@ -772,9 +848,142 @@
 
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; FÜR COMPILER 2 ;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;(let [test-tokens ["int" "i" "," "String" "s" ")" "{" "static" "int" "x" ";"]
+;      argument-list (vec (take-while #(not= ")" %) test-tokens))
+;      restly-code (second (split-at (count argument-list) test-tokens))]
+;  [argument-list restly-code]
+;  )
+
+(defn gen-tab-for-func
+  "Generates a symbol table for one function/method
+   Call with full code including the starting function|method"
+  [[_ type subroutine-name open-parantheses & remaining :as code]]
+  ;;TODO: Argumente verarbeiten
+  (let [argument-list (vec (take-while #(not= ")" %) remaining))
+        restly-code (vec (second (split-at (inc (count argument-list)) remaining))) ; Code after ")"
+        table-with-args (loop [tab {}
+                               [type name & r :as args] argument-list]
+                          (if (empty? args)
+                            tab
+                            (recur (update-in tab [name] conj {:type type :kind "argument"}) (rest r)))
+                          )]
+    (loop [table table-with-args
+           [current & remaining :as full-code] restly-code
+           inline-kind ""
+           inline-type ""
+           closing-parantheses-remaining 0
+           segment-counters {"static" 0 "field" 0 "var" 0}]
+      (cond
+        (= "{" current) (recur table remaining "" "" (inc closing-parantheses-remaining) segment-counters)
+        (= 0 closing-parantheses-remaining) [table full-code]
+        (= "}" current) (recur table remaining "" "" (dec closing-parantheses-remaining) segment-counters)
+
+        (= "static" current) (recur (assoc-in table [(second remaining)]  {:type (first remaining) :kind "static" :# (get segment-counters "static")})
+                                    (rest (rest remaining))
+                                    "static"
+                                    (first remaining)
+                                    closing-parantheses-remaining
+                                    (update segment-counters "static" inc))
+        (= "field" current) (recur (assoc-in table [(second remaining)]  {:type (first remaining) :kind "field" :# (get segment-counters "field")})
+                                   (rest (rest remaining))
+                                   "field"
+                                   (first remaining)
+                                   closing-parantheses-remaining
+                                   (update segment-counters "field" inc))
+        (= "var" current) (recur (assoc-in table [(second remaining)]  {:type (first remaining) :kind "var" :# (get segment-counters "var")})
+                                 (rest (rest remaining))
+                                 "var"
+                                 (first remaining)
+                                 closing-parantheses-remaining
+                                 (update segment-counters "var" inc))
+        (= "," current) (recur (assoc-in table [(first remaining)] {:type inline-type :kind inline-kind :# (get segment-counters inline-kind)})
+                               (rest remaining)
+                               inline-kind
+                               inline-type
+                               closing-parantheses-remaining
+                               (update segment-counters inline-kind inc))
+
+        :else
+        (recur table remaining "" "" closing-parantheses-remaining segment-counters)
+        )
+      ))
+  )
+
+
+; Das Beispiel klappt
+;(gen-tab-for-func ["function" "int" "coolFunc" "(" "int" "x" "," "int" "y" ")" "{" "static" "int" "a" "," "b" ";" "field" "int" "c" ";" "}"])
+
+
+(defn generate-symbol-table
+  "Returns symbol table"
+  [full-code]
+  (loop [tables {:class {}}
+         [current & remaining :as full-code] full-code
+         inline-kind ""
+         inline-type ""
+         segment-counters {"static" 0 "field" 0}]
+    (cond
+      (nil? current) tables
+
+      (= "static" current) (recur (assoc-in tables [:class (second remaining)] {:kind "static" :type (first remaining) :# (get segment-counters "static")})
+                                  (rest (rest remaining))
+                                  :static
+                                  (first remaining)
+                                  (update segment-counters "static" inc))
+      (= "field" current) (recur (assoc-in tables [:class (second remaining)] {:kind "field" :type (first remaining) :# (get segment-counters "field")})
+                                 (rest (rest remaining))
+                                 :field
+                                 (first remaining)
+                                 (update segment-counters "field" inc))
+
+      (= "," current) (recur (assoc-in tables [:class (first remaining)] {:type inline-type :kind inline-kind :# (get segment-counters inline-kind)})
+                             (rest remaining)
+                             inline-kind
+                             inline-type
+                             (update segment-counters inline-kind inc))
+
+      (re-matches #"function|method" current)
+      (let [[func-tab rem-code] (gen-tab-for-func full-code)
+            new-tables (assoc tables (second remaining) func-tab)]
+        (recur new-tables rem-code "" "" segment-counters)
+        )
+
+      :else
+      (recur tables remaining "" "" segment-counters)
+      )
+    )
+  )
+
+
+(def array-test-tokens (vec (tokenize "src/10/ArrayTest/Main.jack")))
+(def expression-less-test-tokens (vec (tokenize "src/10/ExpressionLessSquare/Main.jack")))
+
+; Sieht korrekt aus
+; {:class {},
+; "main" {"a" {:type "Array", :kind "var", :# 0},
+;         "length" {:type "int", :kind "var", :# 1},
+;         "i" {:type "int", :kind "var", :# 2},
+;         "sum" {:type "int", :kind "var", :# 3}}}
+;(generate-symbol-table array-test-tokens)
 
 
 
+; Sieht korrekt aus
+; {:class {"test" {:kind "static", :type "boolean", :# 0}},
+; "main" {"game" {:type "SquareGame", :kind "var", :# 0}},
+; "more" {"b" {:type "boolean", :kind "var", :# 0}}}
+;(generate-symbol-table expression-less-test-tokens)
+
+
+(defn compile-jack
+  [filepath]
+  (let [tokens (tokenize filepath)
+        compiled (compile-class tokens [])]
+    (result-xml-to-file filepath compiled)))
 
 
 
