@@ -40,6 +40,11 @@
 
 (def identifier-regex #"[a-zA-Z_]+[a-zA-Z0-9_]*")
 
+(defn pr2
+  "Print + Return"
+  [x]
+  (prn x)
+  x)
 
 
 ; NOTE: The RegEx used in this method has 3 cases:
@@ -172,8 +177,9 @@
 (declare compile-class-var-dec)
 (declare compile-subroutine-dec)
 (declare compile-subroutine-body)
-
+(declare param-to-xml)
 (declare compile-statements)
+(declare compile-statement)
 (declare compile-let-statement)
 (declare compile-if-statement)
 (declare compile-while-statement)
@@ -193,129 +199,6 @@
 (declare compile-var-dec)
 (declare compile-parameter-list)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; STATEMENTS
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn compile-let-statement
-  "Returns [remaining-code xml-lines]"
-  [[current & remaining :as full-code] xml-lines]
-  (cond
-    ; Edit: Einfach zurückkehren
-    (nil? current) [full-code xml-lines]
-
-    (= current "let") (recur remaining (into xml-lines ["<letStatement>\n" "<keyword>" "let" "</keyword>\n"]) )
-    (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"]) )
-
-    ;We expect an expression after this
-    ; Edit: Mit Rest selber aufrufen
-    (= current "[") (apply compile-let-statement (compile-expression remaining (into xml-lines ["<symbol>" "[" "</symbol>\n"])))
-
-    ;We expect a = after this, not an expression
-    (= current "]") (recur remaining (into xml-lines ["<symbol>" "]" "</symbol>\n"]))
-    ; Note: Das ) macht expression iwie schon
-    (= current ")") (recur remaining xml-lines)
-
-    ;We expect an expression after this
-    ; Edit: Mit Rest selber aufrufen
-    (= current "=") (apply compile-let-statement (compile-expression remaining (into xml-lines ["<symbol>" "=" "</symbol>\n" ])))
-
-    ; Edit: Exit einfach mit Rückgabe!
-    (= current ";") [remaining (conj xml-lines "<symbol>;</symbol>\n" "</letStatement>\n")]
-    ))
-
-
-(defn compile-if-statement
-  [[current & remaining :as full-code] xml-lines]
-  (cond
-    (= current "if") (recur remaining (into xml-lines ["<ifStatement>\n" "<keyword>" "if" "</keyword>\n"]) )
-
-    ;We expect an expression after this one
-    ; Edit: Mit Rest selber aufrufen
-    (= current "(") (apply compile-if-statement (compile-expression remaining (into xml-lines ["<symbol>" current "</symbol>\n"]) ))
-
-    (= current ")") (recur remaining (into xml-lines ["<symbol>" current "</symbol>\n"]))
-    ; Edit: Mit Rest selber aufrufen
-    (= current "{") (apply compile-if-statement (compile-statements remaining (into xml-lines ["<symbol>" current "</symbol>\n" "<statements>\n"]) ))
-
-
-    ;Exiting if statement without else to whoever contained the if statement
-    ; EDIT: Einfach zurückkehren!!
-    (and (not= (first remaining) "else")
-         (= current "}"))
-    [remaining (into xml-lines ["<symbol>" "}" "</symbol>\n" "</ifStatement>\n"])]
-
-    ; We found an "else" so we process the }, the else and the { and then statements
-    (and (= (first remaining) "else")
-         (= current "}"))
-    (apply compile-if-statement (compile-statements
-                                  (rest (rest remaining))
-                                  (into xml-lines ["<symbol>" "}" "</symbol>\n" "<keyword>" "else" "</keyword>\n" "<symbol>" "{" "</symbol>\n" "<statements>\n"])
-                                  ))
-
-    )
-  )
-
-
-(defn compile-while-statement
-  [[current & remaining :as full-code] xml-lines]
-  (cond
-    (= current "while") (recur remaining (into xml-lines ["<whileStatement>\n" "<keyword>" "while" "</keyword>\n"]) )
-    ; Edit: Mit Rest selber aufrufen
-    (= current "(") (apply compile-while-statement (compile-expression remaining (into xml-lines ["<symbol>(</symbol>\n"]) ))
-    (= current ")") (recur remaining (into xml-lines ["<symbol>" current "</symbol>\n"]) )
-    ; Edit: Mit Rest selber aufrufen
-    (= current "{") (apply compile-while-statement (compile-statements remaining (into xml-lines ["<symbol>" current "</symbol>\n" "<statements>\n"]) ))
-    ; Edit: Eifnach zurückkehren
-    (= current "}") [remaining (conj xml-lines "<symbol>}</symbol>\n" "</whileStatement>\n")]
-    )
-  )
-
-
-
-(defn compile-do-statement
-  [[current & remaining :as full-code] xml-lines]
-  (cond
-    (= current "do") (recur remaining (into xml-lines ["<doStatement>\n" "<keyword>" "do" "</keyword>\n"]))
-    (= current ")") (recur remaining (into xml-lines ["<doStatement>\n" "<keyword>" "do" "</keyword>\n"]))
-    ; Edit: Einfach zurückkehren
-    (= current ";") [remaining (conj xml-lines "<symbol>;</symbol>\n" "</doStatement>\n")]
-    ; Edit: Mit Rest selber aufrufen
-    (re-matches identifier-regex current) (apply compile-do-statement (compile-subroutine-call full-code xml-lines))))
-
-
-(defn compile-return-statement
-  [[current & remaining :as full-code] xml-lines]
-  (cond
-    ; Edit: Mit rest selber aufrufen
-    (= current "return") (recur remaining (into xml-lines ["<returnStatement>\n" "<keyword>" "return" "</keyword>\n"]))
-    ; Edit: Einfach zurückkehren
-    (= current ";") [remaining (conj xml-lines "<symbol>;</symbol>\n" "</returnStatement>\n")]
-    ; Edit: Mit Rest selber aufrufen
-    (re-matches identifier-regex current) (apply compile-return-statement (compile-expression full-code xml-lines )))
-  )
-
-
-(defn compile-statements
-  "Returns [remaining-code xml-lines]"
-  [[current & remaining :as full-code] xml-lines]
-
-  (cond
-    (= "let" current) (apply compile-statements (compile-let-statement full-code xml-lines ))
-    (= "if" current) (apply compile-statements (compile-if-statement full-code xml-lines ))
-    (= "while" current) (apply compile-statements (compile-while-statement full-code xml-lines ))
-    (= "do" current) (apply compile-statements (compile-do-statement full-code xml-lines ))
-    (= "return" current) (apply compile-statements (compile-return-statement full-code xml-lines ))
-
-    ; Edit: Einfach zurückkehren mit [remaining-code xml-lines]
-    :else
-    [full-code (into xml-lines ["</statements>\n"])])
-  )
-
-;;Todo: caller oder callback um in statements zu entscheiden, wer aufgerufen hat
-;; Wenn ein statement statements aufruft haben wir sonst das Problem, dass wir in subroutineBody gehen
-;; bevor wir mit einem letStatement zB fertig sind, weil if/while selber statements hat
-
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -325,118 +208,6 @@
 (def op-regex #"^([+\-*/&|<>=]|&lt;|&gt;|&amp;)$")
 (def unary-op-regex #"-|~")
 
-
-
-;(defn compile-expression
-;  "Returns [remaining-code xml-lines]"
-;  [[current & remaining :as full-code] xml-lines]
-;  ;(println "in compile-expression, callers sind:" (apply str callers))
-;  (cond
-;
-;    ; Edit: Einfach zurückkehren
-;    ; Fall 1: (expression)
-;    ; expression muss danach nicht vorbei sein, kann auch op kommen
-;    (= "(" current) (recur remaining (into xml-lines ["<symbol>" current "</symbol>\n" "<expression>\n"]))
-;    (= ")" current) [full-code (into xml-lines ["</term>\n" "</expression>\n" ;"<symbol>" ")" "</symbol>\n"
-;                                                ])]
-;    ;TODO: ) Muss IMMER vom Aufrufer geschlossen werden wegen expressionList!!!!!
-;
-;
-;    ; Edit: Einfach zurückkehren
-;    ; Fall 2: varName [expression]
-;    ; expression muss danach nicht vorbei sein, kann auch op kommen
-;    ; Edit: Hier musste ein term vorne dran !!
-;    (and (re-matches identifier-regex current)
-;         (= "[" (first remaining)))
-;    (recur (rest remaining) (into xml-lines ["<term>\n" "<identifier>" current "</identifier>\n"  "<symbol>" "[" "</symbol>\n" "<expression>\n"]) )
-;
-;    ; NOTE: Das schließt den Term nicht :shrug:
-;    ; NOTE: Rückgabe statt recur :shrug:
-;    (= "]" current) [remaining (into xml-lines ["</term>\n" "</expression>\n" "<symbol>" current "</symbol>\n"])]
-;
-;    ; Edit: Sich selbst mit Rest aufrufen
-;    ; Fall 3 und 4: subroutineCall
-;    (and (re-matches identifier-regex current)
-;         (or
-;           (= "(" (first remaining))
-;           (= "." (first remaining))
-;           )) (apply compile-expression (compile-subroutine-call full-code (into xml-lines ["<term>\n"])))
-;
-;    ; Edit: Selbst mit Rest aufrufen
-;    ; Fall 5: integerConstant, stringConstant, keywordConstant, varName
-;    (or (re-matches integer-constant-regex current)
-;        (re-matches string-constant-regex  current)
-;        (re-matches keyword-constant-regex current)
-;        (re-matches identifier-regex       current))
-;    (apply compile-expression (compile-simple-term full-code xml-lines ))
-;
-;    ;; Fall 6: Operator (für (op term)*)
-;    (re-matches op-regex current)
-;    (recur remaining (into xml-lines [(format "<symbol>%s</symbol>\n" current)]))
-;    ; <term> dran oder nicht?!?!?
-;    ; Dran,
-;
-;    ;; EDIT: Einfach zurückkehren
-;    :else
-;    [full-code (into xml-lines ["</term>\n" "</expression>\n"])]
-;    ))
-
-;; TODO: Fehler fixxen (siehe Beschreibung unten bei Testfall)
-;(defn compile-term
-;  "Returns [rest-tokens xml-lines] after consuming a term."
-;  [[current & remaining :as full-code] xml-lines]
-;  (cond
-;    ;; Fall 1: ( expression )
-;    (= "(" current)
-;    (let [[rest-after-expr expr-xml] (compile-expression remaining [])]
-;      (recur (rest rest-after-expr)
-;             (into xml-lines
-;                   (concat
-;                     ["<term>\n" "<symbol>(</symbol>\n"     ;"<expression>\n"
-;                      ]
-;                     expr-xml
-;                     [
-;                      ;"</expression>\n"
-;                     "<symbol>)</symbol>\n"]))))
-;
-;    ;; Fall 2: varName[ expression ]
-;    (and (re-matches identifier-regex current)
-;         (= "[" (first remaining)))
-;    (let [[inner-rest expr-xml] (compile-expression (rest remaining) [])]
-;      (apply compile-term [(rest inner-rest)
-;                           (into xml-lines
-;                                 (concat
-;                                   ["<term>\n"
-;                                    (format "<identifier>%s</identifier>\n" current)
-;                                    "<symbol>[</symbol>\n"]
-;                                   expr-xml
-;                                   ["<symbol>]</symbol>\n"]))]))
-;
-;    ;; Fall 3 + 4: subroutineCall
-;    (and (re-matches identifier-regex current)
-;         (or (= "(" (first remaining))
-;             (= "." (first remaining))))
-;    (apply compile-term (compile-subroutine-call full-code
-;                                                 (into xml-lines ["<term>\n"])))
-;
-;    ;; Fall 3.5 und 4.5: Ende eines subroutine Calls und damit auch eines Terms
-;    ;(= ")" current) (recur remaining (into xml-lines ["<symbol>" ")" "</symbol>\n"]))
-;
-;    ;; Fall 5: simple term
-;    (or (re-matches integer-constant-regex current)
-;        (re-matches string-constant-regex  current)
-;        (re-matches keyword-constant-regex current)
-;        (re-matches identifier-regex       current))
-;    (apply compile-term (compile-simple-term full-code xml-lines))
-;
-;    ;; Fall 6: unaryOp regex
-;    ;; TODO: Fixxen
-;    (re-matches unary-op-regex current)
-;    (apply compile-term (compile-term remaining (into xml-lines ["<term>\n" "<symbol>" current "</symbol>\n"])))
-;
-;    :else
-;    ;; kein Term gefunden
-;    [full-code (into xml-lines ["</term>\n"])]))
 
 (defn compile-term
   "Returns [rest-tokens xml-lines] after consuming a term."
@@ -534,6 +305,26 @@
     [remaining (into xml-lines tagged-term)]
     ))
 
+(defn compile-expression-list
+  "Returns [remaining-code xml-lines]"
+  [tokens xml-lines]
+  (let [start-xml (conj xml-lines "<expressionList>\n")]
+    (if (= (first tokens) ")")
+      [(rest tokens) (into start-xml ["</expressionList>\n" "<symbol>)</symbol>\n"])]
+      ;; Mindestens eine Expression vorhanden
+      (loop [toks tokens
+             xml  start-xml]
+        (let [[after-expr xml-after-expr] (compile-expression toks xml)]
+          (if (not= (first after-expr) ",")
+            ;; Kein weiteres Komma -> Ende der Liste
+            [after-expr (into xml-after-expr ["</expressionList>\n"])]
+            ;; Komma gefunden -> nächste Expression verarbeiten
+            (let [[_comma & after-comma] after-expr]
+              (recur after-comma
+                     (conj xml-after-expr "<symbol>,</symbol>\n")))))))))
+
+
+
 
 (defn compile-subroutine-call
   "Returns [remaining-code xml-lines]"
@@ -557,202 +348,537 @@
     [full-code xml-lines]
     ; (conj xml-lines "</term>\n") ?
     ; </term> nicht, wenn wir aus ) kommen?!?!
+    )
+  )
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; STATEMENTS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn compile-statement
+  "Returns xml-lines"
+  [[current & remaining :as full-code]]
+
+  (cond
+    ; Todo anpassen
+    (= "let" current)  (compile-let-statement full-code)
+    (= "if" current)  (compile-if-statement full-code)
+    (= "while" current)  (compile-while-statement full-code)
+    (= "do" current)  (compile-do-statement full-code)
+    (= "return" current) (compile-return-statement full-code)
     ))
 
+(defn group-statements
+  [tokens]
+  (loop [tokens tokens
+         groups []
+         current-group nil
+         current-type nil
+         brace-depth 0]
+    (if (empty? tokens)
+      (if current-group
+        (conj groups current-group)
+        groups)
+      (let [token     (first tokens)
+            remaining (rest tokens)]
+        (cond
+          ;; Neues Statement starten
+          (and (nil? current-group)
+               (#{"let" "if" "do" "while" "return"} token))
+          (recur remaining
+                 groups
+                 [token]
+                 token
+                 (if (#{"if" "while"} token) 0 0))
 
-;; Note: Diese Lösung ist etwas verwirrend, wenn man HOF selten sieht:
-;;  Wir übergeben an einen initial compile-expression-Aufruf eine neue callback-Funktion (continue)
-;;  Diese checkt dann, ob wir ein "," als nächstes haben oder nicht.
-;;  Falls ja, so ruft sie wieder ein compile-expression auf mit sich selbst als callback-Funktion
-;;  Falls nein, so ruft die Callback-Funktion seinen caller auf
-;(defn compile-expression-list
-;  "Returns [remaining-code xml-lines]"
-;  [[current & remaining :as tokens]
-;   xml-lines]
-;
-;  ; TODO: Das letzte <symbol> ) </symbol> entfernen, erst das </expression> dran, dann das
-;  ;  Außerdem: Falls expressionList leer ist, wird trotzdem <expression></expression> geschrieben :/
-;
-;  (letfn [(continue
-;            ;; continue bekommt denselben Parameter-Satz wie compile-expression
-;            [[next & rem :as toks] xml-lines]
-;            (if (= next ",")
-;              ;; Komma: ins XML schreiben und erneut compile-expression mit continue (also sich selbst)
-;              (let [xml' (conj xml-lines "<symbol>,</symbol>\n<expression>\n")] ; NOTE: Müssen expression selber öffnen!!!!
-;                (compile-expression rem xml'))
-;              ;; kein Komma: schließe die Liste an expressions und zurück zum ursprünglichen caller
-;              ;; EDIT: Einfach zurückkehren!!
-;              (let [xml' (into xml-lines ["</expressionList>\n" "<symbol>" ")" "</symbol>\n"])]
-;                [toks xml'])))]
-;
-;    ;; Einstieg: öffnendes Tag, erste Expression parsen
-;    ;; EDIT: Apply auf continue aufrufen
-;    (apply continue (compile-expression tokens
-;                                        (into xml-lines ["<expressionList>\n" "<expression>\n"])
-;                                        ))))
+          ;; Innerhalb eines Statements
+          current-group
+          (let [new-group        (conj current-group token)
+                next-brace-depth (cond
+                                   (and (#{"if" "while"} current-type)
+                                        (= token "{")) (inc brace-depth)
+                                   (and (#{"if" "while"} current-type)
+                                        (= token "}")) (dec brace-depth)
+                                   :else           brace-depth)
+                finished?        (case current-type
+                                   "let"    (= token ";")
+                                   "do"     (= token ";")
+                                   "return" (= token ";")
+                                   "if"     (and (= token "}")
+                                                 (= next-brace-depth 0)
+                                                 (not (and (seq remaining)
+                                                           (= (first remaining) "else"))))
+                                   "while"  (and (= token "}")
+                                                 (= next-brace-depth 0))
+                                   false)
+                new-groups       (if finished? (conj groups new-group) groups)
+                next-state       (if finished?
+                                   {:groups        new-groups
+                                    :current-group nil
+                                    :current-type  nil
+                                    :brace-depth   0}
+                                   {:groups        new-groups
+                                    :current-group new-group
+                                    :current-type  current-type
+                                    :brace-depth   next-brace-depth})]
+            (recur remaining
+                   (:groups next-state)
+                   (:current-group next-state)
+                   (:current-type next-state)
+                   (:brace-depth next-state)))
 
-
-(defn compile-expression-list
-  "Returns [remaining-code xml-lines]"
-  [tokens xml-lines]
-  (let [start-xml (conj xml-lines "<expressionList>\n")]
-    (if (= (first tokens) ")")
-      [(rest tokens) (into start-xml ["</expressionList>\n" "<symbol>)</symbol>\n"])]
-      ;; Mindestens eine Expression vorhanden
-      (loop [toks tokens
-             xml  start-xml]
-        (let [[after-expr xml-after-expr] (compile-expression toks xml)]
-          (if (not= (first after-expr) ",")
-            ;; Kein weiteres Komma -> Ende der Liste
-            [after-expr (into xml-after-expr ["</expressionList>\n"])]
-            ;; Komma gefunden -> nächste Expression verarbeiten
-            (let [[_comma & after-comma] after-expr]
-              (recur after-comma
-                     (conj xml-after-expr "<symbol>,</symbol>\n")))))))))
+          ;; Kein aktives Statement (ignorieren)
+          :else
+          (recur remaining groups nil nil 0))))))
 
 
 
+(defn extract-until-balanced
+  [tokens]
+  (loop [tokens tokens
+         depth 1
+         extracted []]
+    (if (empty? tokens)
+      (throw (Exception. "Unbalanced braces"))
+      (let [token (first tokens)]
+        (cond
+          (and (= token "}") (= depth 1))
+          [extracted (rest tokens)]
 
+          (= token "{")
+          (recur (rest tokens) (inc depth) (conj extracted token))
+
+          (= token "}")
+          (recur (rest tokens) (dec depth) (conj extracted token))
+
+          :else
+          (recur (rest tokens) depth (conj extracted token)))))))
+
+
+(declare compile-expression)
+
+
+(defn compile-let-statement
+  "Returns xml-lines"
+  [[lett var-name bracket-or-equal :as full-code]]
+  (let [start-xml [(str "<letStatement>\n")
+                   (str "<keyword> let </keyword>\n")
+                   (str "<identifier> " var-name " </identifier>\n")]
+        end-xml [(str "</letStatement>\n")]]
+    (if (= "=" bracket-or-equal)
+      ; Fall 1: Einfache Zuweisung (ohne Array-Index)
+      (let [eq-xml ["<symbol>=</symbol>\n"]
+            [rest-after-expr expr-xml] (compile-expression (drop 3 full-code) [])
+            semicolon (first rest-after-expr)
+            semi-xml ["<symbol>;</symbol>\n"]
+            xml-lines (vec (concat start-xml eq-xml expr-xml semi-xml end-xml))]
+        xml-lines)
+
+      ; Fall 2: Array-Index-Zuweisung
+      (if (= "[" bracket-or-equal)
+        (let [open-bracket-xml ["<symbol>[</symbol>\n"]
+              [rest-after-index index-expr-xml] (compile-expression (drop 3 full-code) [])
+              close-bracket (first rest-after-index)
+              close-bracket-xml ["<symbol>]</symbol>\n"]
+              rest-after-bracket (rest rest-after-index)
+              eq-sign (first rest-after-bracket)
+              eq-xml ["<symbol>=</symbol>\n"]
+              [rest-after-expr expr-xml] (compile-expression (rest rest-after-bracket) [])
+              semicolon (first rest-after-expr)
+              semi-xml ["<symbol>;</symbol>\n"]
+              xml-lines (vec (concat start-xml
+                                     open-bracket-xml
+                                     index-expr-xml
+                                     close-bracket-xml
+                                     eq-xml
+                                     expr-xml
+                                     semi-xml
+                                     end-xml))]
+          xml-lines)))))
+
+
+(compile-let-statement ["let" "i" "[" "5" "]" "=" "3" ";"])
+
+
+(defn compile-if-statement
+  "Returns [remaining-tokens xml-lines]"
+  [[if-token & remaining :as tokens]]
+  (when (not= if-token "if")
+    (throw (Exception. "Not an if statement")))
+
+  (let [start-xml [(str "<ifStatement>\n")
+                   (str "<keyword> if </keyword>\n")]
+
+        ; Process opening parenthesis
+        open-paren (first remaining)
+        _ (when (not= open-paren "(")
+            (throw (Exception. (str "Expected ( after if, found " open-paren))))
+        open-paren-xml ["<symbol>(</symbol>\n"]
+
+        ; Process expression inside ()
+        [rest-after-expr expr-xml] (compile-expression (rest remaining) [])
+        close-paren (first rest-after-expr)
+        _ (when (not= close-paren ")")
+            (throw (Exception. (str "Expected ) after expression, found " close-paren))))
+        close-paren-xml ["<symbol>)</symbol>\n"]
+
+        ; Process opening brace for if block
+        rest-after-paren (rest rest-after-expr)
+        open-brace (first rest-after-paren)
+        _ (when (not= open-brace "{")
+            (throw (Exception. (str "Expected { after ), found " open-brace))))
+        open-brace-xml ["<symbol>{</symbol>\n"]
+
+        ; Extract if-block tokens (without outer braces)
+        [if-block-tokens rest-after-if] (extract-until-balanced (rest rest-after-paren))
+        ; Group into individual statements
+        if-statement-groups (group-statements if-block-tokens)
+        ; Compile each statement group
+        if-statements-xml (vec  (concat ["<statements>\n"]
+                                        (reduce concat (mapcat compile-statement if-statement-groups))
+                                        ["</statements>\n"]))
+        close-brace-xml ["<symbol>}</symbol>\n"]
+
+        ; Check for else clause
+        [else-xml rest-final] (if (and (seq rest-after-if)
+                                       (= (first rest-after-if) "else"))
+                                (let [else-keyword ["<keyword> else </keyword>\n"]
+                                      rest-after-else (rest rest-after-if)
+                                      else-open-brace (first rest-after-else)
+                                      _ (when (not= else-open-brace "{")
+                                          (throw (Exception. (str "Expected { after else, found " else-open-brace))))
+                                      else-open-brace-xml ["<symbol>{</symbol>\n"]
+
+                                      ; Extract else-block tokens
+                                      [else-block-tokens else-rest] (extract-until-balanced (rest rest-after-else))
+                                      ; Group into individual statements
+                                      else-statement-groups (group-statements else-block-tokens)
+                                      ; Compile each statement group
+                                      else-statements-xml (vec (concat ["<statements>\n"]
+                                                                       (mapcat compile-statement else-statement-groups)
+                                                                       ["</statements>\n"]))
+                                      else-close-brace-xml ["<symbol>}</symbol>\n"]
+                                      else-xml (vec (concat else-keyword
+                                                            else-open-brace-xml
+                                                            else-statements-xml
+                                                            else-close-brace-xml))]
+                                  [else-xml else-rest])
+                                [[] rest-after-if])
+
+        ; Build final XML
+        xml-lines (vec (concat start-xml
+                               open-paren-xml
+                               expr-xml
+                               close-paren-xml
+                               open-brace-xml
+                               if-statements-xml
+                               close-brace-xml
+                               else-xml
+                               ["</ifStatement>\n"]))]
+     xml-lines))
+
+
+(compile-if-statement ["if" "(" "true" ")" "{" "let" "i" "=" "1" ";" "}"])
+
+
+(defn compile-while-statement
+  "Returns xml-lines"
+  [[while-token & remaining :as tokens]]
+  (when (not= while-token "while")
+    (throw (Exception. "Not a while statement")))
+
+  (let [start-xml [(str "<whileStatement>\n")
+                   (str "<keyword> while </keyword>\n")]
+
+        ; Process opening parenthesis
+        open-paren (first remaining)
+        open-paren-xml ["<symbol>(</symbol>\n"]
+        ; Process expression inside ()
+        [rest-after-expr expr-xml] (compile-expression (rest remaining) [])
+        close-paren (first rest-after-expr)
+        close-paren-xml ["<symbol>)</symbol>\n"]
+
+        ; Process opening brace for while block
+        rest-after-paren (rest rest-after-expr)
+        open-brace (first rest-after-paren)
+        open-brace-xml ["<symbol>{</symbol>\n"]
+        ; Extract while-block tokens (without outer braces)
+        [while-block-tokens rest-after-while] (extract-until-balanced (rest rest-after-paren))
+        ; Group into individual statements
+        while-statement-groups (group-statements while-block-tokens)
+        ; Compile each statement group
+        while-statements-xml (vec (concat ["<statements>\n"] ;NOTE Hier schlägt was fehl in der Rekursion
+                                          (flatten (mapcat compile-statement while-statement-groups))
+                                          ["</statements>\n"]))
+        ; Process closing brace (already handled by extract-until-balanced, so we just output it)
+        close-brace-xml ["<symbol>}</symbol>\n"]
+        ; Build final XML
+        xml-lines (vec (concat start-xml
+                               open-paren-xml
+                               expr-xml
+                               close-paren-xml
+                               open-brace-xml
+                               while-statements-xml
+                               close-brace-xml
+                               ["</whileStatement>\n"]))]
+    xml-lines))
+
+(compile-while-statement ["while" "(" "i" "<" "5" ")" "{" "let" "i" "=" "i" "-" "1" ";" "}"])
+
+(defn compile-do-statement
+  "Returns [remaining-tokens xml-lines]"
+  [[do & remaining :as tokens]]
+  (let [start-xml [(str "<doStatement>\n")
+                   (str "<keyword> do </keyword>\n")]
+        [after-call call-xml] (compile-subroutine-call remaining [])
+        semi-xml ["<symbol> ; </symbol>\n"]
+        end-xml ["</doStatement>\n"]
+        xml-lines (vec (concat start-xml
+                               call-xml
+                               semi-xml
+                               end-xml))]
+     xml-lines))
+
+(compile-do-statement ["do" "Output" "." "print" "(" "5" "," "6" ")" ";"])
+
+
+(defn compile-return-statement
+  "Returns [remaining-tokens xml-lines]"
+  [[return-token & remaining :as tokens]]
+  (when (not= return-token "return")
+    (throw (Exception. "Not a return statement")))
+
+  (let [start-xml [(str "<returnStatement>\n")
+                   (str "<keyword> return </keyword>\n")]
+        ; Check if there's an expression before semicolon
+        [rest-after-expr expr-xml] (if (not= (first remaining) ";")
+                                     (compile-expression remaining [])
+                                     [remaining []])
+        semicolon (first rest-after-expr)
+        semicolon-xml ["<symbol>;</symbol>\n"]
+        xml-lines (vec (concat start-xml
+                               expr-xml
+                               semicolon-xml
+                               ["</returnStatement>\n"]))]
+     xml-lines))
+
+(compile-return-statement ["return" "i" "+" "5" ";"])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; PROGRAM STRUCTURE
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defn split-coll-by-sep
+  "Teilt die Collection `coll` in Sub-Collections auf,
+   wobei bei jedem Auftreten von `sep` eine neue Sub-Collection begonnen wird.
+   Das Trennzeichen selbst bleibt jeweils am Ende jeder Sub-Collection erhalten."
+  [coll sep]
+  (let [groups
+        (reduce
+          (fn [acc x]
+            (let [acc' (update acc (dec (count acc)) conj x)]
+              (if (= x sep)
+                (conj acc' [])
+                acc')))
+          [[]]
+          coll)]
+    (if (empty? (peek groups))
+      (pop groups)
+      groups)))
+
+(group-statements ["let" "i" "=" "1" ";" "if" "(" "true" ")" "{" "let" "i" "=" "2" ";" "}" "while" "(" "2" "<" "3" ")" "{" "let" "i" "=" "2" ";" "let" "i" "=" "3" ";" "}"])
+; [["let" "i" "=" "1" ";"]
+; ["if" "(" "true" ")" "{" "let" "i" "=" "2" ";" "}"]
+; ["while" "(" "2" "<" "3" ")" "{" "let" "i" "=" "2" ";" "let" "i" "=" "3" ";" "}"]]
+
+(defn var-dec-to-xml
+  [[var type name & r]]
+  (let [start-xml ["<varDec>\n" "<keyword>var</keyword>\n"]
+        type-xml  (if (re-matches #"int|char|boolean" type)
+                    ["<keyword>" type "</keyword>\n"]
+                    ["<identifier>" type "</identifier>\n"])
+        name-xml  ["<identifier>" name "</identifier>\n"]
+        middle    (loop [[t1 t2 & re] r
+                         xml []]
+                    (if (= ";" t1)
+                      (into xml ["<symbol>;</symbol>\n"])
+                      (recur re
+                             (into xml
+                                   ["<symbol>,</symbol>\n"
+                                    "<identifier>" t2 "</identifier>\n"]))))
+        end-xml   ["</varDec>\n"]]
+    (concat start-xml type-xml name-xml middle end-xml)))
+
+(var-dec-to-xml ["var" "int" "i" "," "sum" "," "z" ";"])
 
 (defn compile-subroutine-body
-  "Returns [remaining-code xml-lines]"
-  ([full-code xml-lines]
-   (let [[current & remaining :as code] full-code]
-     (cond
-       (= "{" current) (recur remaining (into xml-lines ["<subroutineBody>\n" "<symbol>" current "</symbol>\n"]))
-
-       ; Edit: Sich selber mit Rest aufrufen
-       (= "var" current) (apply compile-subroutine-body (compile-var-dec code xml-lines))
-
-       ; Edit: Einfach zurückkehren!
-       (= "}" current) [remaining (into xml-lines ["<symbol>" current "</symbol>\n" "</subroutineBody>\n" "</subroutineDec>\n"])]
-
-       ; Edit: Sich selbst mit Rest aufrufen
-       ; TODO: compile-statements ändern!
-       :else
-       (apply compile-subroutine-body (compile-statements code (into xml-lines ["<statements>\n"]))))))
-
-  ;; 3-Parameter-Arity: Nötig für callback der statements (diese wissen nicht, we sie aufgerufen hat)
-  ([full-code xml-lines callers]
-   (compile-subroutine-body full-code xml-lines)))
+  "Returns xml-lines"
+  [[open-curly & r]]
+  (let [; Jeweils closing } des bodys wegnehmen
+        var-decs-code (pr2 (take-while #(not (re-matches #"let|if|while|do|return" %)) (butlast r)))
+        statements-code (pr2 (drop-while #(not (re-matches #"let|if|while|do|return" %)) (butlast r)))
+        start-xml ["<subroutineBody>\n" "<symbol>{</symbol>\n"]
+        end-xml ["<symbol>}</symbol>\n" "</subroutineBody>\n"]
+        var-decs-split-code (pr2 (split-coll-by-sep var-decs-code ";"))
+        var-decs-xml (pr2 (reduce concat (map var-dec-to-xml var-decs-split-code)))
+        ;; TODO: group-statements korrekt??
+        statements-split-code (pr2 (group-statements statements-code))
+        ;; Todo compile statements anpassen
+        statements-start ["<statements>\n"]
+        statements-xml (reduce concat (map compile-statement statements-split-code))
+        statements-end ["</statements>\n"]
+        xml (concat start-xml var-decs-xml statements-start statements-xml statements-end end-xml)]
+    xml))
 
 
+(defn group-subroutine-decs
+  "Teilt die Collection `coll` in Sub-Collections auf.
+   Eine neue Sub-Collection wird jeweils immer dann begonnen,
+   wenn ein Separator (\"function\", \"method\", \"constructor\") auftaucht.
+   Das Separator-Element selbst steht dabei am Anfang der neuen Sub-Collection."
+  [coll]
+  (let [seps #{"function" "method" "constructor"}]
+    (reduce
+      (fn [acc x]
+        (if (seps x)
+          (conj acc [x])
+          (update acc (dec (count acc)) conj x)))
+      []
+      coll)))
+
+(group-subroutine-decs
+  ["function" "int"    "Main"     "(" ")" "{" "}"
+   "method"   "String" "minor"    "(" ")" "{"])
+;; => [["function" "int" "Main" "(" ")" "{" "}"]
+;;     ["method"   "String" "minor" "(" ")" "{"]]
+
+
+(defn param-to-xml
+  [[type name comma]]
+  (if (re-matches #"int|char|boolean" type)
+    ["<keyword>" type "</keyword>\n" "<identifier>" name "</identifier>\n" "<symbol>,</symbol>\n"]
+    ["<identifier>" type "</identifier>\n" "<identifier>" name "</identifier>\n" "<symbol>,</symbol>\n"]))
+
+(defn compile-parameter-list
+  "Returns xml-lines"
+  ; [[current & remaining :as full-code] xml-lines]
+  [r]
+  (let [params-code (butlast r)
+        start-xml ["<symbol>" "(" "</symbol>\n" "<parameterList>\n"]
+        sep-code (split-coll-by-sep params-code ",")
+        param-xml (butlast (reduce concat (map param-to-xml sep-code))) ;butlast entfern das "<symbol>,<symbol> des letzen Mappings!
+        end-xml ["</parameterList>\n" "<symbol>" ")" "</symbol>\n"]]
+    (concat start-xml param-xml end-xml)))
+
+(defn split-coll-at-index
+  "Teilt `coll` so auf, dass alle Elemente bis inklusive `idx`
+   in der ersten, und der Rest in der zweiten Coll landen."
+  [coll idx]
+  (split-at (inc idx) coll))
+
+(defn compile-single-subroutine-dec
+  [[what type subroutineName open-parantheses & r]]
+  (let [closing-parantheses-index (.indexOf r ")")
+        [parameter-list-code subroutine-body-code] (split-coll-at-index r closing-parantheses-index)
+        start-xml ["<subroutineDec>\n" "<keyword>" what "</keyword>\n"]
+        type-xml (if (re-matches #"void|int|char|boolean" type)
+                   ["<keyword>" type "</keyword>\n"]
+                   ["<identifier>" type "</identifier>\n"])
+        name-xml ["<identifier>" subroutineName "</identifier>\n"]
+        parameter-list-xml (pr2 (compile-parameter-list parameter-list-code))
+
+        ; TODO: compile-subroutine-body anpassen, compile-parameter-list klappt
+        subroutine-body-xml (pr2 (compile-subroutine-body subroutine-body-code))
+        end-xml ["</subroutineDec>\n"]]
+    (concat start-xml type-xml name-xml parameter-list-xml subroutine-body-xml end-xml)
+    )
+  )
+
+(.indexOf ["(" "int" "x" ")" "{" ")"] ")")
 
 (defn compile-subroutine-dec
   "Returns [remaining-code xml-lines]"
   [[current & remaining :as full-code] xml-lines]
-  (cond
-    (re-matches #"constructor|function|method" current) (recur remaining (into xml-lines ["<subroutineDec>\n" "<keyword>" current "</keyword>\n"]))
-    (re-matches #"void|int|char|boolean" current) (recur remaining (into xml-lines ["<keyword>" current "</keyword>\n"]))
-    (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"])) ; Fall type UND Fall subroutineName
-
-    ; Edit: compile-subroutine-dec echt höher in Hierarchie
-    ; TODO: Die beiden Methoden anpassen!!!
-    ;  Geht das recur?
-    (= "(" current) (apply compile-subroutine-dec (compile-parameter-list full-code xml-lines))
-    (= "{" current) (apply compile-subroutine-dec (compile-subroutine-body full-code xml-lines))
-    :else [full-code xml-lines] ; ACHTUNG: compile-subroutine-body schließt </subroutineDec> da wir mehrere hintereinander haben KÖNNTEN
-    ))
-
-
-;(defn compile-single-class-var-dec
-;  "Returns XML for one class-var-dec"
-;  [[what type name & r]]
-;  (let [start ["<classVarDec>\n"]
-;        what-xml ["<keyword>" what "</keyword>\n"]
-;        type-xml (if (re-matches #"int|char|boolean" type) ["<keyword>" type "</keyword>\n"] ["<identifier>" type "</identifier>\n"])
-;        var-name-xml ["<identifier>" name "</identifier>\n"]
-;        middle (loop [[t1 t2 & re] r
-;                      xml []]
-;                 (if (= ";" t1)
-;                   (into xml ["<symbol>;</symbol>\n"])
-;                   (recur re (into xml ["<symbol>" "," "</symbol>\n" "<identifier>" t2 "</identifier>\n"])))
-;                 )
-;        end ["</classVarDec>\n"]]
-;    (into start (into what-xml (into type-xml (into var-name-xml (into middle end)))))))
-;
-;(compile-single-class-var-dec ["static" "int" "hello" "," "world" "," "is" "," "outdated" ";"])
-
-
-(defn compile-class-var-dec
-  "Returns [remaining-code xml-lines]"
-  [[current & remaining :as full-code] xml-lines]
-
-  ;(let [blocks (doall (split-with #(= ";" %) full-code))
-  ;      decs (doall (take-while #(complement (re-matches #"static|field" (first %))) blocks))
-  ;      dec-xml (concat (map compile-single-class-var-dec decs))]
-  ;  dec-xml
-  ;  )
-
-  (cond
-    (re-matches #"static|field" current) (recur remaining (into xml-lines ["<classVarDec>\n" "<keyword>" current "</keyword>\n"]))
-    (re-matches #"int|char|boolean" current) (recur remaining (into xml-lines ["<keyword>" current "</keyword>\n"]))
-    (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"]))
-    (= "," current) (recur remaining (into xml-lines ["<symbol>" current "</symbol>\n"]))
-    ; Finishing class-var-dec and returning to caller (compile-class)
-    (= ";" current) [remaining (into xml-lines ["<symbol>" current "</symbol>\n" "</classVarDec>\n"])]
+  (let [; } der Klasse wird vom Aufrufer entfernt!
+        subroutine-dec-code (into [] (drop-while #(not (re-matches #"function|method|constructor" %)) full-code))
+        blocks (pr2 (into [] (group-subroutine-decs subroutine-dec-code)))
+        dec-xml (reduce concat (map compile-single-subroutine-dec blocks))]
+    dec-xml
     )
 
+  ;(cond
+  ;  (re-matches #"constructor|function|method" current) (recur remaining (into xml-lines ["<subroutineDec>\n" "<keyword>" current "</keyword>\n"]))
+  ;  (re-matches #"void|int|char|boolean" current) (recur remaining (into xml-lines ["<keyword>" current "</keyword>\n"]))
+  ;  (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"])) ; Fall type UND Fall subroutineName
+  ;
+  ;  (= "(" current) (apply compile-subroutine-dec (compile-parameter-list full-code xml-lines))
+  ;  (= "{" current) (apply compile-subroutine-dec (compile-subroutine-body full-code xml-lines))
+  ;  :else [full-code xml-lines] ; ACHTUNG: compile-subroutine-body schließt </subroutineDec> da wir mehrere hintereinander haben KÖNNTEN
+  ;  )
   )
+
+(compile-subroutine-dec ["function" "int" "a" "(" ")" "{" "}" "method" "int" "b" "(" "int" "x" "," "int" "y" ")" "{" "}"] [])
+
+;;;; classVarDec
+
+(defn compile-single-class-var-dec
+  "Returns XML for one class-var-dec"
+  [[what type name & r]]
+  (if (nil? what)
+    []
+    (let [start ["<classVarDec>\n"]
+          what-xml ["<keyword>" what "</keyword>\n"]
+          type-xml (if (re-matches #"int|char|boolean" type) ["<keyword>" type "</keyword>\n"] ["<identifier>" type "</identifier>\n"])
+          var-name-xml ["<identifier>" name "</identifier>\n"]
+          middle (loop [[t1 t2 & re] r
+                        xml []]
+                   (if (= ";" t1)
+                     (into xml ["<symbol>;</symbol>\n"])
+                     (recur re (into xml ["<symbol>" "," "</symbol>\n" "<identifier>" t2 "</identifier>\n"])))
+                   )
+          end ["</classVarDec>\n"]]
+      (into start (into what-xml (into type-xml (into var-name-xml (into middle end))))))))
+
+(compile-single-class-var-dec ["static" "int" "hello" "," "world" "," "is" "," "outdated" ";"])
+
+
+(defn compile-class-var-decs
+  "Returns xml-lines"
+  [[current & remaining :as full-code] xml-lines]
+
+  (let [class-var-dec-code (into [] (take-while #(not (re-matches #"function|method|constructor" %)) full-code))
+        blocks (into [] (split-coll-by-sep class-var-dec-code ";"))
+        dec-xml (into [] (reduce concat (map compile-single-class-var-dec blocks)))]
+    dec-xml))
 
 (defn compile-class
   "Returns XML code - Top level compilation function"
-  [[current & remaining :as full-code] xml-lines]
-  ;[[cl cl-name brace & remaining :as full-code] xml-lines]
+  ;[[current & remaining :as full-code] xml-lines]
+  [[cl cl-name brace & remaining :as full-code] xml-lines]
 
-  ;(when (and
-  ;        (= cl "class")
-  ;        (re-matches identifier-regex cl-name)
-  ;        (= brace "{"))
-  ;  (concat
-  ;    ["<class>\n"
-  ;     "<keyword>" class "</keyword>\n"
-  ;     "<identifier>" cl-name "</identifier>\n"
-  ;     "<symbol>" "{" "</symbol>\n"]
-  ;    (compile-class-var-dec remaining [])
-  ;    (compile-subroutine-dec remaining [])
-  ;    ["</class>"])
-  ;  )
+  (when (and
+          (= cl "class")
+          (re-matches identifier-regex cl-name)
+          (= brace "{"))
+    (let [class-var-dec-xml (doall (compile-class-var-decs (butlast remaining) []))
+          subroutine-dec-xml (doall (compile-subroutine-dec (butlast remaining) []))]
+      ; Mit butlast jeweils das closing } entfernen
+
+      (concat
+        ["<class>\n"
+         "<keyword>" "class" "</keyword>\n"
+         "<identifier>" cl-name "</identifier>\n"
+         "<symbol>" "{" "</symbol>\n"]
+        class-var-dec-xml
+        subroutine-dec-xml
+        ["<symbol>}</symbol>\n" "</class>\n"]))))
 
 
-  (cond
-    (empty? full-code) xml-lines  ; Terminierung bei leerer Token-Liste
-    (= current "}") (into xml-lines ["<symbol>" "}" "</symbol>\n" "</class>"]) ;; Base case ending the compilation
-    (= current "class") (recur remaining (into xml-lines ["<class>\n" "<keyword>" "class" "</keyword>\n"]))
-    (= current "{") (recur remaining (into xml-lines ["<symbol>" "{" "</symbol>\n"]))
+(compile-parameter-list ["(" "int" "x" "," "int" "y" "," "SquareGame" "squareGame" ")"])
 
-    ; Edit: Compile class echt höher in Hierarchie als compile-class-var-dec
-    ; compile-class-var-dec muss zurückgeben: [remaining-code xml-lines]
-    (re-matches #"static|field" current) (apply compile-class (compile-class-var-dec full-code xml-lines))
 
-    ; Edit: Compile class echt höher in Hierarchie als compile-subroutine-dec
-    ; compile-subroutine-dec muss zurückgeben: [remaining-code xml-lines]
-    (re-matches #"constructor|function|method" current) (apply compile-class (compile-subroutine-dec full-code xml-lines))
-    (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"]))
-    )
-  )
-
-(defn compile-parameter-list
-  "Returns [remaining-code xml-lines]"
-  [[current & remaining :as full-code] xml-lines]
-  (cond
-    (= "(" current) (recur remaining (into xml-lines ["<symbol>" current "</symbol>\n <parameterList>\n"]))
-
-    ;Edit: Statt compile-subroutine-dec aufrufen einfach zurückkehren mit [remaining-code xml-lines]
-    (= ")" current) [remaining (into xml-lines ["</parameterList>\n" "<symbol>" current "</symbol>\n"])]
-
-    ;next two are type
-    (re-matches #"int|char|boolean" current) (recur remaining (into xml-lines ["<keyword>" current "</keyword>\n"]))
-    (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"]))
-
-    (= "," current) (recur remaining (into xml-lines ["<symbol>" current "</symbol>\n"]))
-    )
-  )
 
 (defn compile-var-dec
   "Returns XML code"
@@ -780,39 +906,40 @@
 (defn compile-jack
   [filepath]
   (let [tokens (tokenize filepath)
-        compiled (compile-class tokens [])]
+        compiled (doall (compile-class tokens []))]
     (result-xml-to-file filepath compiled)))
 
 (defn -main [& args]
   (write-tokenizer-to-file (first args))
   (compile-jack (first args)))
 
+
 ;;;;;;;;;;;;;;;;;
 ;; ArrayTest
 ;;;;;;;;;;;;;;;;;
 
-; Klappt ENDLICH :DD
-; diff -w Main.xml Mainout.xml
-; IST LEER (ausführen im Ordner ArrayTest)
+; Klappt nach dem Refactoring ENDLICH
+; diff -w ArrayTest/Main.xml ArrayTest/Mainout.xml
 (compile-jack "src/10/ArrayTest/Main.jack")
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; ExpressionLessSquare
 ;;;;;;;;;;;;;;;;;;;;;;;
 
-; Klappt auch recht flott: Bei if-statement hat } gefehlt und bei mehreren subroutineDecs muss der body auch die dec in der
-; "falschen" rekursiven Variante schließen
-; Ausführen im Ordern ExpressionLessSquare
-; diff -w Main.xml Mainout.xml
+; Klappt auch direkt
+; diff -w ExpressionLessSquare/Main.xml ExpressionLessSquare/Mainout.xml
 (compile-jack "src/10/ExpressionLessSquare/Main.jack")
 
-; diff -w Square.xml Squareout.xml
-; Nur ein kleiner Fehler: Bei simple-term muss es keyword heißen, nicht keywordConstant :D
+
+; keyword int keyword vom ersten Parameter in einer ParameterList eines constructors fehlt
+; diff -w ExpressionLessSquare/Square.xml ExpressionLessSquare/Squareout.xml
 (compile-jack "src/10/ExpressionLessSquare/Square.jack")
 
-; diff -w SquareGame.xml SquareGameout.xml
-; Klappt sofort (na endlich)
+; diff -w ExpressionLessSquare/SquareGame.xml ExpressionLessSquare/SquareGameout.xml
+; TODO: Illegal Argument Exception
+; method void run macht Probleme??
+; statements-xml in compile-subroutine-body
+; flatten statt reduce concat does the trick (in compile-while statement, die inner statements werden ja gemappt)
 (compile-jack "src/10/ExpressionLessSquare/SquareGame.jack")
 
 
@@ -820,29 +947,26 @@
 ;; Square
 ;;;;;;;;;;;;;;;;;
 
-; Hier bekommen wir noch den Fehler, dass compile-term zu viele (19)
-; Lag an dem Fall 1 in compile-term
 
-
-
-; diff -w Main.xml Mainout.xml
-; An zwei Stellen <expression> bzw </expression> statt <term> bzw. </term>
-; Problem war, dass compile-term bei unary term nicht geöffnet hat und Aufruf von compile-term an einer Stelle
-; noch eine expression geöffnet hat
+; diff -w Square/Main.xml Square/Mainout.xml
 (compile-jack "src/10/Square/Main.jack")
 
-; diff -w Square.xml Squareout.xml
-; Problem war, wie Lukas es gesagt hat: Rekurisver Aufruf bei compile-term der völlig unnötig ist.
-; Dadurch wurde das nächste - Token bei sowas wie let size = size - 2; als unary op erkannt, obwohl es ein
-; op in einer term (op term) - Darstellung war.
+; diff -w Square/Square.xml Square/Squareout.xml
 (compile-jack "src/10/Square/Square.jack")
 
-; diff -w SquareGame.xml SquareGameout.xml
-; Problem war: unary-op regex hat nach unary-op noch term geschlossen
-; und es wurde der term dafür zu früh geschlossen
+; diff -w Square/SquareGame.xml Square/SquareGameout.xml
 (compile-jack "src/10/Square/SquareGame.jack")
 
 
+
+; Alles diffs:
+; diff -w ArrayTest/Main.xml ArrayTest/Mainout.xml
+; diff -w ExpressionLessSquare/Main.xml ExpressionLessSquare/Mainout.xml
+; diff -w ExpressionLessSquare/Square.xml ExpressionLessSquare/Squareout.xml
+; diff -w ExpressionLessSquare/SquareGame.xml ExpressionLessSquare/SquareGameout.xml
+; diff -w Square/Main.xml Square/Mainout.xml
+; diff -w Square/Square.xml Square/Squareout.xml
+; diff -w Square/SquareGame.xml Square/SquareGameout.xml
 
 
 
@@ -984,149 +1108,3 @@
   (let [tokens (tokenize filepath)
         compiled (compile-class tokens [])]
     (result-xml-to-file filepath compiled)))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-;
-;(defmulti grammar (fn [s] s))
-;(defmethod grammar "classVarDec" [s] (list "static|field" "type" "varNameOblFirst" ";")) ;;Achtung: (, varName)* fehlt noch!!!
-;(defmethod grammar "varNameOblFirst" [s] (list "," "varName")) ;; Aufuf von check auf varNameOblfirst muss auf jeden Fall varName erzeugen und varName-Aufruf auch
-;(defmethod grammar "varName" [s] (list "," "varName"))
-;(defmethod grammar "type" [s] (list "int|char|boolean|className"))
-;
-;;; void|type direkt ausgetippt
-;(defmethod grammar "subroutineDec" [s] (list "constructor|function|method" "void|int|char|boolean|identifier" "subroutineName" "(" "parameterList" ")" "subroutineBody"))
-;
-;(defmethod grammar "parameterList" [s] (list "type" "varNameOblFirst"))
-;(defmethod grammar "subroutineBody" [s] (list "{" "varDec" "statements" "}"))
-;(defmethod grammar "varDec" (list "var" "type" "varName"))
-;(defmethod grammar "className" [s] (list "identifier"))
-;(defmethod grammar "subroutineName" [s] (list "identifier"))
-;(defmethod grammar "varName" [s] (list "identifier"))
-;
-;(defmethod grammar "statements" [s] (list "statement"))
-;(defmethod grammar "letStatement" [s] (list "let" "varName" "([ expression ])?" "=" "expression" ";"))
-;(defmethod grammar "ifStatement" [s] (list "if" "(" "expression" ")" "{" "statements" "}" "(else { statements })?"))
-;(defmethod grammar "whileStatement" [s] (list "while" "(" "expression" ")" "{" "statements" "}"))
-;(defmethod grammar "doStatement" [s] (list "do" "subroutineCall" ";"))
-;(defmethod grammar "ReturnStatement" [s] (list "return" "expression" ";"))
-;
-;(defmethod grammar :default [s] s)
-;
-;
-;
-;
-;(defmulti match
-;  "Checks the found token against a grammar token"
-;          (fn [found grammar] (get-type grammar)))
-;
-;(defmethod match "keyword" [found grammar] (= found grammar))
-;(defmethod match "symbol" [found grammar] (= found grammar))
-;(defmethod match "integerConstant" [found grammar] (is-int? found))
-;(defmethod match "stringConstant" [found grammar] true)
-;(defmethod match "identifier" [found grammar] (not (= (first found) "_")))
-;
-;(defmethod match :default [found grammar] false)
-;
-;
-;;(defn compile-expression
-;;  [[token & restly-found :as found-tokens]
-;;   ;[grammar-token & restly-grammar-tokens :as grammar-tokens]
-;;   ]
-;;  (if (= token "(")                                         ;; Case (expression)
-;;    (let [restly-found (compile-expression restly-found)]
-;;      (if (= ")" (first restly-found))
-;;        (rest restly-found)
-;;        (throw (Exception. "Expression is faulty!, ( was never closed!"))))
-;;    (let [lookahead1 (first (rest found-tokens))]
-;;      (if (= "[" lookahead1)
-;;        (let [restly-found (compile-expression restly-found)]
-;;          (if (= "]" (first restly-found))
-;;            (rest restly-found)
-;;            (throw (Exception. "Expression is faulty!, [ was never closed!"))))
-;;        (if (and (match token "subroutineName") (= "(" lookahead1))
-;;          (let [restly-found (compile-expression-list (rest (rest found-tokens)))]
-;;            (if (= ")" (first restly-found))
-;;              (rest restly-found)
-;;              (throw (Exception. "Expression is faulty!, ( was never closed in subroutineCall!"))))
-;;          (if (match token )
-;;            then
-;;            else))))
-;;      ))
-;
-;
-;(defn check-grammar
-;  "Compares expected token of grammar with token found in jack-File
-;   where:
-;   found-tokens are the actual tokens (found by Tokenizer in Jack-file),
-;   grammar-token is the expected next token/symbol of grammar.
-;
-;   Returns whether found tokens can be generated by grammar.
-;
-;   The function may use the grammar to generate terminal symbols and
-;   consume more tokens from "
-;  [[token & restly-found :as found-tokens]
-;   [grammar-token & restly-grammar-tokens :as grammar-tokens]]
-;
-;  (if (= grammar-token (grammar grammar-token))
-;
-;    ;Terminalsymbol erreicht in Generierung
-;    (if (match token grammar-token)
-;      (recur restly-found restly-grammar-tokens)
-;      (if (clojure.string/includes? grammar-token "|")
-;        (let [possibilities (map grammar (str/split grammar-token #"\|"))  ;habe sichergestellt, dass map grammar keine | mehr enthalten kann!
-;              case (filter (partial match token) grammar)]
-;          (if (= 1 (count case))
-;            (rest found-tokens)
-;            (throw (Exception. (str "Token not in cases or multiple matches (| matching)" (str/join possibilities ",")) )))
-;          )
-;        false))
-;
-;    ;Grammatik noch erweiterbar auf Symbol
-;    (if (= token "statement")
-;      (let [which-statement (str (first found-tokens) "Statement")] ;i.e. generating with lookahead e.g. "letStatement"
-;        (recur found-tokens (into (list which-statement) (rest grammar-tokens)))) ; replace statement with letStatement, ifStatement etc.
-;
-;      (if (= token "expression")
-;        then
-;        else)
-;      )))
-;
-;(list "a" "b")
-;
-;(defn parse
-;  [file-path]
-;  (let [tokens (tokenize file-path)]
-;    (loop [unchecked-tokens tokens
-;           generated (list "class" "className" "{" "classVarDec" "subroutineDec" "}")
-;           state ""]
-;      )
-;    )
-;  )
-;
-;
-;
-;(defn init-state
-;  "Returns default state for the compiler for given filepath"
-;  [filepath]
-;  (let [fileSplit (tokenize filepath)]
-;    (atom {:index 0
-;           :file fileSplit
-;           :n (count fileSplit)})))
