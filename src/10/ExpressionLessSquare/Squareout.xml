@@ -21,7 +21,7 @@
 <identifier>Square</identifier>
 <identifier>new</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 <keyword>int</keyword>
 <identifier>Ax</identifier>
 <symbol>,</symbol>
@@ -36,8 +36,8 @@
 <symbol>{</symbol>
 <statements>
 <letStatement>
-<keyword>let</keyword>
-<identifier>x</identifier>
+<keyword> let </keyword>
+<identifier> x </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -47,8 +47,8 @@
 <symbol>;</symbol>
 </letStatement>
 <letStatement>
-<keyword>let</keyword>
-<identifier>y</identifier>
+<keyword> let </keyword>
+<identifier> y </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -58,8 +58,8 @@
 <symbol>;</symbol>
 </letStatement>
 <letStatement>
-<keyword>let</keyword>
-<identifier>size</identifier>
+<keyword> let </keyword>
+<identifier> size </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -69,16 +69,16 @@
 <symbol>;</symbol>
 </letStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>draw</identifier>
 <symbol>(</symbol>
 <expressionList>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <expression>
 <term>
 <identifier>x</identifier>
@@ -95,14 +95,14 @@
 <keyword>void</keyword>
 <identifier>dispose</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Memory</identifier>
 <symbol>.</symbol>
 <identifier>deAlloc</identifier>
@@ -115,10 +115,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -130,14 +130,14 @@
 <keyword>void</keyword>
 <identifier>draw</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -150,10 +150,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -184,10 +184,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -199,14 +199,14 @@
 <keyword>void</keyword>
 <identifier>erase</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -219,10 +219,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -253,10 +253,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -268,14 +268,14 @@
 <keyword>void</keyword>
 <identifier>incSize</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <ifStatement>
-<keyword>if</keyword>
+<keyword> if </keyword>
 <symbol>(</symbol>
 <expression>
 <term>
@@ -286,17 +286,17 @@
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>erase</identifier>
 <symbol>(</symbol>
 <expressionList>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <letStatement>
-<keyword>let</keyword>
-<identifier>size</identifier>
+<keyword> let </keyword>
+<identifier> size </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -306,19 +306,19 @@
 <symbol>;</symbol>
 </letStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>draw</identifier>
 <symbol>(</symbol>
 <expressionList>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 </statements>
 <symbol>}</symbol>
 </ifStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -330,14 +330,14 @@
 <keyword>void</keyword>
 <identifier>decSize</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <ifStatement>
-<keyword>if</keyword>
+<keyword> if </keyword>
 <symbol>(</symbol>
 <expression>
 <term>
@@ -348,17 +348,17 @@
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>erase</identifier>
 <symbol>(</symbol>
 <expressionList>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <letStatement>
-<keyword>let</keyword>
-<identifier>size</identifier>
+<keyword> let </keyword>
+<identifier> size </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -368,19 +368,19 @@
 <symbol>;</symbol>
 </letStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>draw</identifier>
 <symbol>(</symbol>
 <expressionList>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 </statements>
 <symbol>}</symbol>
 </ifStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -392,14 +392,14 @@
 <keyword>void</keyword>
 <identifier>moveUp</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <ifStatement>
-<keyword>if</keyword>
+<keyword> if </keyword>
 <symbol>(</symbol>
 <expression>
 <term>
@@ -410,7 +410,7 @@
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -423,10 +423,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -457,11 +457,11 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <letStatement>
-<keyword>let</keyword>
-<identifier>y</identifier>
+<keyword> let </keyword>
+<identifier> y </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -471,7 +471,7 @@
 <symbol>;</symbol>
 </letStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -484,10 +484,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -518,13 +518,13 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 </statements>
 <symbol>}</symbol>
 </ifStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -536,14 +536,14 @@
 <keyword>void</keyword>
 <identifier>moveDown</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <ifStatement>
-<keyword>if</keyword>
+<keyword> if </keyword>
 <symbol>(</symbol>
 <expression>
 <term>
@@ -554,7 +554,7 @@
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -567,10 +567,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -601,11 +601,11 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <letStatement>
-<keyword>let</keyword>
-<identifier>y</identifier>
+<keyword> let </keyword>
+<identifier> y </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -615,7 +615,7 @@
 <symbol>;</symbol>
 </letStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -628,10 +628,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -662,13 +662,13 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 </statements>
 <symbol>}</symbol>
 </ifStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -680,14 +680,14 @@
 <keyword>void</keyword>
 <identifier>moveLeft</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <ifStatement>
-<keyword>if</keyword>
+<keyword> if </keyword>
 <symbol>(</symbol>
 <expression>
 <term>
@@ -698,7 +698,7 @@
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -711,10 +711,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -745,11 +745,11 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <letStatement>
-<keyword>let</keyword>
-<identifier>x</identifier>
+<keyword> let </keyword>
+<identifier> x </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -759,7 +759,7 @@
 <symbol>;</symbol>
 </letStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -772,10 +772,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -806,13 +806,13 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 </statements>
 <symbol>}</symbol>
 </ifStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -824,14 +824,14 @@
 <keyword>void</keyword>
 <identifier>moveRight</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
 <symbol>{</symbol>
 <statements>
 <ifStatement>
-<keyword>if</keyword>
+<keyword> if </keyword>
 <symbol>(</symbol>
 <expression>
 <term>
@@ -842,7 +842,7 @@
 <symbol>{</symbol>
 <statements>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -855,10 +855,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -889,11 +889,11 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <letStatement>
-<keyword>let</keyword>
-<identifier>x</identifier>
+<keyword> let </keyword>
+<identifier> x </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -903,7 +903,7 @@
 <symbol>;</symbol>
 </letStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>setColor</identifier>
@@ -916,10 +916,10 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>Screen</identifier>
 <symbol>.</symbol>
 <identifier>drawRectangle</identifier>
@@ -950,13 +950,13 @@
 </expression>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 </statements>
 <symbol>}</symbol>
 </ifStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>

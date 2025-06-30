@@ -13,7 +13,7 @@
 <keyword>void</keyword>
 <identifier>main</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
@@ -26,8 +26,8 @@
 </varDec>
 <statements>
 <letStatement>
-<keyword>let</keyword>
-<identifier>game</identifier>
+<keyword> let </keyword>
+<identifier> game </identifier>
 <symbol>=</symbol>
 <expression>
 <term>
@@ -37,7 +37,7 @@
 <symbol>;</symbol>
 </letStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>game</identifier>
 <symbol>.</symbol>
 <identifier>run</identifier>
@@ -45,10 +45,10 @@
 <expressionList>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <doStatement>
-<keyword>do</keyword>
+<keyword> do </keyword>
 <identifier>game</identifier>
 <symbol>.</symbol>
 <identifier>dispose</identifier>
@@ -56,10 +56,10 @@
 <expressionList>
 </expressionList>
 <symbol>)</symbol>
-<symbol>;</symbol>
+<symbol> ; </symbol>
 </doStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
@@ -71,7 +71,7 @@
 <keyword>void</keyword>
 <identifier>more</identifier>
 <symbol>(</symbol>
- <parameterList>
+<parameterList>
 </parameterList>
 <symbol>)</symbol>
 <subroutineBody>
@@ -84,7 +84,7 @@
 </varDec>
 <statements>
 <ifStatement>
-<keyword>if</keyword>
+<keyword> if </keyword>
 <symbol>(</symbol>
 <expression>
 <term>
@@ -96,14 +96,14 @@
 <statements>
 </statements>
 <symbol>}</symbol>
-<keyword>else</keyword>
+<keyword> else </keyword>
 <symbol>{</symbol>
 <statements>
 </statements>
 <symbol>}</symbol>
 </ifStatement>
 <returnStatement>
-<keyword>return</keyword>
+<keyword> return </keyword>
 <symbol>;</symbol>
 </returnStatement>
 </statements>
