@@ -1106,5 +1106,6 @@
 (defn compile-jack
   [filepath]
   (let [tokens (tokenize filepath)
+        sym-table (generate-symbol-table tokens)
         compiled (compile-class tokens [])]
     (result-xml-to-file filepath compiled)))
