@@ -456,6 +456,27 @@
           :else
           (recur (rest tokens) depth (conj extracted token)))))))
 
+; NOTE: Starte bei 0, weil wir im Code auch die öffnende { noch haben
+(defn extract-until-balanced-full-method
+  [tokens]
+  (loop [tokens tokens
+         depth 0
+         extracted []]
+    (if (empty? tokens)
+      (throw (Exception. "Unbalanced braces"))
+      (let [token (first tokens)]
+        (cond
+          (and (= token "}") (= depth 1))
+          [extracted (rest tokens)]
+
+          (= token "{")
+          (recur (rest tokens) (inc depth) (conj extracted token))
+
+          (= token "}")
+          (recur (rest tokens) (dec depth) (conj extracted token))
+
+          :else
+          (recur (rest tokens) depth (conj extracted token)))))))
 
 (declare compile-expression)
 
@@ -983,63 +1004,42 @@
 ;  )
 
 (defn gen-tab-for-func
-  "Generates a symbol table for one function/method
-   Call with full code including the starting function|method"
-  [[_ type subroutine-name open-parantheses & remaining :as code]]
-  ;;TODO: Argumente verarbeiten
-  (let [argument-list (vec (take-while #(not= ")" %) remaining))
-        restly-code (vec (second (split-at (inc (count argument-list)) remaining))) ; Code after ")"
-        table-with-args (loop [tab {}
-                               [type name & r :as args] argument-list]
-                          (if (empty? args)
-                            tab
-                            (recur (update-in tab [name] conj {:type type :kind "argument"}) (rest r)))
-                          )]
-    (loop [table table-with-args
-           [current & remaining :as full-code] restly-code
-           inline-kind ""
-           inline-type ""
-           closing-parantheses-remaining 0
-           segment-counters {"static" 0 "field" 0 "var" 0}]
-      (cond
-        (= "{" current) (recur table remaining "" "" (inc closing-parantheses-remaining) segment-counters)
-        (= 0 closing-parantheses-remaining) [table full-code]
-        (= "}" current) (recur table remaining "" "" (dec closing-parantheses-remaining) segment-counters)
+  "Generates a symbol table for one function/method"
+  [[_ type subroutine-name open-paren & remaining :as code]]
+  (let [[param-list-tokens after-params] (split-at (count (take-while #(not= ")" %) remaining))
+                                                   remaining)
+        ;; Remove trailing ")" from after-params
+        after-params' (rest after-params)
 
-        (= "static" current) (recur (assoc-in table [(second remaining)]  {:type (first remaining) :kind "static" :# (get segment-counters "static")})
-                                    (rest (rest remaining))
-                                    "static"
-                                    (first remaining)
-                                    closing-parantheses-remaining
-                                    (update segment-counters "static" inc))
-        (= "field" current) (recur (assoc-in table [(second remaining)]  {:type (first remaining) :kind "field" :# (get segment-counters "field")})
-                                   (rest (rest remaining))
-                                   "field"
-                                   (first remaining)
-                                   closing-parantheses-remaining
-                                   (update segment-counters "field" inc))
-        (= "var" current) (recur (assoc-in table [(second remaining)]  {:type (first remaining) :kind "var" :# (get segment-counters "var")})
-                                 (rest (rest remaining))
-                                 "var"
-                                 (first remaining)
-                                 closing-parantheses-remaining
-                                 (update segment-counters "var" inc))
-        (= "," current) (recur (assoc-in table [(first remaining)] {:type inline-type :kind inline-kind :# (get segment-counters inline-kind)})
-                               (rest remaining)
-                               inline-kind
-                               inline-type
-                               closing-parantheses-remaining
-                               (update segment-counters inline-kind inc))
+        ;; Process parameters: group into [type name] pairs
+        param-pairs (->> param-list-tokens
+                         (remove #(= "," %))
+                         (partition 2))
+        table-with-args (reduce (fn [tab [idx [typ name]]]
+                                  (assoc tab name {:type typ :kind "argument" :# idx}))
+                                {}
+                                (map-indexed vector param-pairs))
+        [body-tokens after-body] (extract-until-balanced-full-method after-params')
+        var-decls (filter #(= "var" (first %))
+                          (split-coll-by-sep (rest body-tokens) ";"))
+        process-var-dec (fn [tab [var-keyword var-type & names-and-commas]]
+                          (let [;; Remove the trailing semicolon from names-and-commas
+                                names-and-commas' (butlast names-and-commas)
+                                var-names (remove #(= "," %) names-and-commas')
+                                count (count (filter #(= (:kind %) "var") (vals tab)))]
+                            (reduce (fn [acc name]
+                                      (assoc acc name {:type var-type
+                                                       :kind "var"
+                                                       :# count}))
+                                    tab
+                                    var-names)))
+        final-table (reduce process-var-dec table-with-args var-decls)]
+    [final-table after-body]))
 
-        :else
-        (recur table remaining "" "" closing-parantheses-remaining segment-counters)
-        )
-      ))
-  )
 
 
 ; Das Beispiel klappt
-;(gen-tab-for-func ["function" "int" "coolFunc" "(" "int" "x" "," "int" "y" ")" "{" "static" "int" "a" "," "b" ";" "field" "int" "c" ";" "}"])
+(gen-tab-for-func ["function" "int" "coolFunc" "(" "int" "x" "," "int" "y" ")" "{" "var" "int" "a" "," "b" ";" "var" "int" "c" ";" "}"])
 
 
 (defn generate-symbol-table
@@ -1055,12 +1055,12 @@
 
       (= "static" current) (recur (assoc-in tables [:class (second remaining)] {:kind "static" :type (first remaining) :# (get segment-counters "static")})
                                   (rest (rest remaining))
-                                  :static
+                                  "static"
                                   (first remaining)
                                   (update segment-counters "static" inc))
       (= "field" current) (recur (assoc-in tables [:class (second remaining)] {:kind "field" :type (first remaining) :# (get segment-counters "field")})
                                  (rest (rest remaining))
-                                 :field
+                                 "field"
                                  (first remaining)
                                  (update segment-counters "field" inc))
 
@@ -1070,7 +1070,7 @@
                              inline-type
                              (update segment-counters inline-kind inc))
 
-      (re-matches #"function|method" current)
+      (re-matches #"function|method|constructor" current)
       (let [[func-tab rem-code] (gen-tab-for-func full-code)
             new-tables (assoc tables (second remaining) func-tab)]
         (recur new-tables rem-code "" "" segment-counters)
@@ -1082,9 +1082,9 @@
     )
   )
 
-
 (def array-test-tokens (vec (tokenize "src/10/ArrayTest/Main.jack")))
 (def expression-less-test-tokens (vec (tokenize "src/10/ExpressionLessSquare/Main.jack")))
+(def expression-less-test-tokens2 (vec (tokenize "src/10/ExpressionLessSquare/Square.jack")))
 
 ; Sieht korrekt aus
 ; {:class {},
@@ -1092,9 +1092,7 @@
 ;         "length" {:type "int", :kind "var", :# 1},
 ;         "i" {:type "int", :kind "var", :# 2},
 ;         "sum" {:type "int", :kind "var", :# 3}}}
-;(generate-symbol-table array-test-tokens)
-
-
+(generate-symbol-table array-test-tokens)
 
 ; Sieht korrekt aus
 ; {:class {"test" {:kind "static", :type "boolean", :# 0}},
@@ -1103,9 +1101,16 @@
 ;(generate-symbol-table expression-less-test-tokens)
 
 
+;(generate-symbol-table expression-less-test-tokens2)
+
+
+
 (defn compile-jack
   [filepath]
   (let [tokens (tokenize filepath)
         sym-table (generate-symbol-table tokens)
         compiled (compile-class tokens [])]
     (result-xml-to-file filepath compiled)))
+
+
+
