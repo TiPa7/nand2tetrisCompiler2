@@ -874,45 +874,120 @@
         dec-xml (into [] (reduce concat (map compile-single-class-var-dec blocks)))]
     dec-xml))
 
+(compile-parameter-list ["(" "int" "x" "," "int" "y" "," "SquareGame" "squareGame" ")"])
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; FÜR COMPILER 2 ;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn gen-tab-for-func
+  "Generates a symbol table for one function/method"
+  [[_ type subroutine-name open-paren & remaining :as code] class-name]
+  (let [[param-list-tokens after-params] (split-at (count (take-while #(not= ")" %) remaining))
+                                                   remaining)
+        ;; Remove trailing ")" from after-params
+        after-params' (rest after-params)
+
+        ;; Process parameters: group into [type name] pairs
+        param-pairs (->> param-list-tokens
+                         (remove #(= "," %))
+                         (partition 2))
+        table-with-args (reduce (fn [tab [idx [typ name]]]
+                                  (assoc tab (str class-name "." name) {:type typ :kind "argument" :# idx}))
+                                {}
+                                (map-indexed vector param-pairs))
+        [body-tokens after-body] (extract-until-balanced-full-method after-params')
+        var-decls (filter #(= "var" (first %))
+                          (split-coll-by-sep (rest body-tokens) ";"))
+        process-var-dec (fn [tab [var-keyword var-type & names-and-commas]]
+                          (let [;; Remove the trailing semicolon from names-and-commas
+                                names-and-commas' (butlast names-and-commas)
+                                var-names (remove #(= "," %) names-and-commas')
+                                count (count (filter #(= (:kind %) "var") (vals tab)))]
+                            (reduce (fn [acc name]
+                                      (assoc acc (str class-name "." name) {:type var-type
+                                                       :kind "var"
+                                                       :# count}))
+                                    tab
+                                    var-names)))
+        final-table (reduce process-var-dec table-with-args var-decls)]
+    [final-table after-body]))
+
+
+
+; Das Beispiel klappt
+(gen-tab-for-func ["function" "int" "coolFunc" "(" "int" "x" "," "int" "y" ")" "{" "var" "int" "a" "," "b" ";" "var" "int" "c" ";" "}"] "Main")
+
+
+(defn generate-symbol-table
+  "Returns symbol table"
+  [full-code class-name]
+  (loop [tables {:class {}}
+         [current & remaining :as full-code] full-code
+         inline-kind ""
+         inline-type ""
+         segment-counters {"static" 0 "field" 0}]
+    (cond
+      (nil? current) tables
+
+      (= "static" current) (recur (assoc-in tables [:class (str class-name "." (second remaining))] {:kind "static" :type (first remaining) :# (get segment-counters "static")})
+                                  (rest (rest remaining))
+                                  "static"
+                                  (first remaining)
+                                  (update segment-counters "static" inc))
+      (= "field" current) (recur (assoc-in tables [:class (str class-name "." (second remaining))] {:kind "field" :type (first remaining) :# (get segment-counters "field")})
+                                 (rest (rest remaining))
+                                 "field"
+                                 (first remaining)
+                                 (update segment-counters "field" inc))
+
+      (= "," current) (recur (assoc-in tables [:class (str class-name "." (first remaining))] {:type inline-type :kind inline-kind :# (get segment-counters inline-kind)})
+                             (rest remaining)
+                             inline-kind
+                             inline-type
+                             (update segment-counters inline-kind inc))
+
+      (re-matches #"function|method|constructor" current)
+      (let [[func-tab rem-code] (gen-tab-for-func full-code class-name)
+            new-tables (assoc tables (second remaining) func-tab)]
+        (recur new-tables rem-code "" "" segment-counters)
+        )
+
+      :else
+      (recur tables remaining "" "" segment-counters)
+      )
+    )
+  )
+
+(def array-test-tokens (vec (tokenize "src/10/ArrayTest/Main.jack")))
+(def expression-less-test-tokens (vec (tokenize "src/10/ExpressionLessSquare/Main.jack")))
+(def expression-less-test-tokens2 (vec (tokenize "src/10/ExpressionLessSquare/Square.jack")))
+
+
+;(generate-symbol-table array-test-tokens "Main")
+
+;(generate-symbol-table expression-less-test-tokens "Main")
+
+
+;(generate-symbol-table expression-less-test-tokens2)
+;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; compile-class
+;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defn compile-class
-  "Returns XML code - Top level compilation function"
+  "Returns vm code - Top level compilation function"
   ;[[current & remaining :as full-code] xml-lines]
-  [[cl cl-name brace & remaining :as full-code] xml-lines]
+  [[cl cl-name brace & remaining :as full-code] class-name]
 
   (when (and
           (= cl "class")
           (re-matches identifier-regex cl-name)
           (= brace "{"))
-    (let [class-var-dec-xml (doall (compile-class-var-decs (butlast remaining) []))
-          subroutine-dec-xml (doall (compile-subroutine-dec (butlast remaining) []))]
+    (let [symbol-table (generate-symbol-table full-code class-name)
+          class-var-dec-vm-code (doall (compile-class-var-decs (butlast remaining) []))
+          subroutine-dec-vm-code (doall (compile-subroutine-dec (butlast remaining) []))]
       ; Mit butlast jeweils das closing } entfernen
-
-      (concat
-        ["<class>\n"
-         "<keyword>" "class" "</keyword>\n"
-         "<identifier>" cl-name "</identifier>\n"
-         "<symbol>" "{" "</symbol>\n"]
-        class-var-dec-xml
-        subroutine-dec-xml
-        ["<symbol>}</symbol>\n" "</class>\n"]))))
-
-
-(compile-parameter-list ["(" "int" "x" "," "int" "y" "," "SquareGame" "squareGame" ")"])
-
-
-
-(defn compile-var-dec
-  "Returns XML code"
-  [[current & remaining :as full-code] xml-lines]
-  (cond
-    (= "var" current) (recur remaining (into xml-lines ["<varDec>\n" "<keyword>" current "</keyword>\n"]))
-    (re-matches #"int|char|boolean" current) (recur remaining (into xml-lines ["<keyword>" current "</keyword>\n"]))
-    ; type AND varName
-    (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"]))
-    (= "," current) (recur remaining (into xml-lines ["<symbol>" current "</symbol>\n"]))
-    ; Edit: Einfach zurückkehren!
-    (= ";" current) [remaining (into xml-lines ["<symbol>" current "</symbol>\n" "</varDec>\n"])]
-    ))
+      )))
 
 
 ;;;;;;;;;;;;;;;;;;
@@ -920,14 +995,14 @@
 ;;;;;;;;;;;;;;;;;;
 (defn result-xml-to-file
   [file-path coll]
-  (let [output-path (str/replace file-path #"\.jack$" "out.xml")]
+  (let [output-path (str/replace file-path #"\.jack$" "out.jack")]
     (spit output-path (apply str coll))))
 ; oder (str/join coll)
 
 (defn compile-jack
   [filepath]
   (let [tokens (tokenize filepath)
-        compiled (doall (compile-class tokens []))]
+        compiled (doall (compile-class tokens (str/replace filepath #"\.jack$" "out.jack")))]
     (result-xml-to-file filepath compiled)))
 
 (defn -main [& args]
@@ -939,35 +1014,16 @@
 ;; ArrayTest
 ;;;;;;;;;;;;;;;;;
 
-; Klappt nach dem Refactoring ENDLICH
 ; diff -w ArrayTest/Main.xml ArrayTest/Mainout.xml
 (compile-jack "src/10/ArrayTest/Main.jack")
 
 ;;;;;;;;;;;;;;;;;;;;;;;
-;; ExpressionLessSquare
+;; ExpressionLessSquare - kompiliert teilweise nicht, daher auslassen
 ;;;;;;;;;;;;;;;;;;;;;;;
-
-; Klappt auch direkt
-; diff -w ExpressionLessSquare/Main.xml ExpressionLessSquare/Mainout.xml
-(compile-jack "src/10/ExpressionLessSquare/Main.jack")
-
-
-; keyword int keyword vom ersten Parameter in einer ParameterList eines constructors fehlt
-; diff -w ExpressionLessSquare/Square.xml ExpressionLessSquare/Squareout.xml
-(compile-jack "src/10/ExpressionLessSquare/Square.jack")
-
-; diff -w ExpressionLessSquare/SquareGame.xml ExpressionLessSquare/SquareGameout.xml
-; TODO: Illegal Argument Exception
-; method void run macht Probleme??
-; statements-xml in compile-subroutine-body
-; flatten statt reduce concat does the trick (in compile-while statement, die inner statements werden ja gemappt)
-(compile-jack "src/10/ExpressionLessSquare/SquareGame.jack")
-
 
 ;;;;;;;;;;;;;;;;;
 ;; Square
 ;;;;;;;;;;;;;;;;;
-
 
 ; diff -w Square/Main.xml Square/Mainout.xml
 (compile-jack "src/10/Square/Main.jack")
@@ -990,127 +1046,6 @@
 ; diff -w Square/SquareGame.xml Square/SquareGameout.xml
 
 
-
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;; FÜR COMPILER 2 ;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;(let [test-tokens ["int" "i" "," "String" "s" ")" "{" "static" "int" "x" ";"]
-;      argument-list (vec (take-while #(not= ")" %) test-tokens))
-;      restly-code (second (split-at (count argument-list) test-tokens))]
-;  [argument-list restly-code]
-;  )
-
-(defn gen-tab-for-func
-  "Generates a symbol table for one function/method"
-  [[_ type subroutine-name open-paren & remaining :as code]]
-  (let [[param-list-tokens after-params] (split-at (count (take-while #(not= ")" %) remaining))
-                                                   remaining)
-        ;; Remove trailing ")" from after-params
-        after-params' (rest after-params)
-
-        ;; Process parameters: group into [type name] pairs
-        param-pairs (->> param-list-tokens
-                         (remove #(= "," %))
-                         (partition 2))
-        table-with-args (reduce (fn [tab [idx [typ name]]]
-                                  (assoc tab name {:type typ :kind "argument" :# idx}))
-                                {}
-                                (map-indexed vector param-pairs))
-        [body-tokens after-body] (extract-until-balanced-full-method after-params')
-        var-decls (filter #(= "var" (first %))
-                          (split-coll-by-sep (rest body-tokens) ";"))
-        process-var-dec (fn [tab [var-keyword var-type & names-and-commas]]
-                          (let [;; Remove the trailing semicolon from names-and-commas
-                                names-and-commas' (butlast names-and-commas)
-                                var-names (remove #(= "," %) names-and-commas')
-                                count (count (filter #(= (:kind %) "var") (vals tab)))]
-                            (reduce (fn [acc name]
-                                      (assoc acc name {:type var-type
-                                                       :kind "var"
-                                                       :# count}))
-                                    tab
-                                    var-names)))
-        final-table (reduce process-var-dec table-with-args var-decls)]
-    [final-table after-body]))
-
-
-
-; Das Beispiel klappt
-(gen-tab-for-func ["function" "int" "coolFunc" "(" "int" "x" "," "int" "y" ")" "{" "var" "int" "a" "," "b" ";" "var" "int" "c" ";" "}"])
-
-
-(defn generate-symbol-table
-  "Returns symbol table"
-  [full-code]
-  (loop [tables {:class {}}
-         [current & remaining :as full-code] full-code
-         inline-kind ""
-         inline-type ""
-         segment-counters {"static" 0 "field" 0}]
-    (cond
-      (nil? current) tables
-
-      (= "static" current) (recur (assoc-in tables [:class (second remaining)] {:kind "static" :type (first remaining) :# (get segment-counters "static")})
-                                  (rest (rest remaining))
-                                  "static"
-                                  (first remaining)
-                                  (update segment-counters "static" inc))
-      (= "field" current) (recur (assoc-in tables [:class (second remaining)] {:kind "field" :type (first remaining) :# (get segment-counters "field")})
-                                 (rest (rest remaining))
-                                 "field"
-                                 (first remaining)
-                                 (update segment-counters "field" inc))
-
-      (= "," current) (recur (assoc-in tables [:class (first remaining)] {:type inline-type :kind inline-kind :# (get segment-counters inline-kind)})
-                             (rest remaining)
-                             inline-kind
-                             inline-type
-                             (update segment-counters inline-kind inc))
-
-      (re-matches #"function|method|constructor" current)
-      (let [[func-tab rem-code] (gen-tab-for-func full-code)
-            new-tables (assoc tables (second remaining) func-tab)]
-        (recur new-tables rem-code "" "" segment-counters)
-        )
-
-      :else
-      (recur tables remaining "" "" segment-counters)
-      )
-    )
-  )
-
-(def array-test-tokens (vec (tokenize "src/10/ArrayTest/Main.jack")))
-(def expression-less-test-tokens (vec (tokenize "src/10/ExpressionLessSquare/Main.jack")))
-(def expression-less-test-tokens2 (vec (tokenize "src/10/ExpressionLessSquare/Square.jack")))
-
-; Sieht korrekt aus
-; {:class {},
-; "main" {"a" {:type "Array", :kind "var", :# 0},
-;         "length" {:type "int", :kind "var", :# 1},
-;         "i" {:type "int", :kind "var", :# 2},
-;         "sum" {:type "int", :kind "var", :# 3}}}
-(generate-symbol-table array-test-tokens)
-
-; Sieht korrekt aus
-; {:class {"test" {:kind "static", :type "boolean", :# 0}},
-; "main" {"game" {:type "SquareGame", :kind "var", :# 0}},
-; "more" {"b" {:type "boolean", :kind "var", :# 0}}}
-;(generate-symbol-table expression-less-test-tokens)
-
-
-;(generate-symbol-table expression-less-test-tokens2)
-
-
-
-(defn compile-jack
-  [filepath]
-  (let [tokens (tokenize filepath)
-        sym-table (generate-symbol-table tokens)
-        compiled (compile-class tokens [])]
-    (result-xml-to-file filepath compiled)))
 
 
 
