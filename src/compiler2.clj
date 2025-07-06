@@ -122,7 +122,7 @@
 (defn prune-string
   "Removes quotes in string"
   [s]
-  (clojure.string/trim (clojure.string/replace s "\"" "")))
+  (clojure.string/replace s "\"" ""))
 
 (defn tokenize-to-xml
   [filepath]
@@ -178,14 +178,12 @@
 (declare compile-subroutine-dec)
 (declare compile-subroutine-body)
 (declare param-to-xml)
-(declare compile-statements)
 (declare compile-statement)
 (declare compile-let-statement)
 (declare compile-if-statement)
 (declare compile-while-statement)
 (declare compile-do-statement)
 (declare compile-return-statement)
-(declare compile-statements)
 (declare compile-subroutine-body)
 (declare compile-subroutine-dec)
 (declare compile-class-var-dec)
@@ -208,148 +206,214 @@
 (def op-regex #"^([+\-*/&|<>=]|&lt;|&gt;|&amp;)$")
 (def unary-op-regex #"-|~")
 
+(defn kind->segment [kind]
+  (case kind
+    "static" "static"
+    "field"  "this"
+    "var"    "local"
+    "argument" "argument"
+    (throw (ex-info (str "Unknown segment kind: " kind)
+                    {:kind kind}))))
 
+
+; NOTE: Mostly checked
 (defn compile-term
-  "Returns [rest-tokens xml-lines] after consuming a term."
-  [[current & remaining :as full-code] xml-lines]
+  "Returns [rest-tokens vm-lines] after consuming a term."
+  [[current & remaining :as full-code] fn-name class-name symbol-table]
   (cond
     ;; Fall 1: ( expression )
     (= "(" current)
-    (let [[rest-after-expr expr-xml] (compile-expression remaining [])]
-      [(rest rest-after-expr)
-       (into xml-lines
-             (concat
-               ["<term>\n" "<symbol>(</symbol>\n"]
-               expr-xml
-               ["<symbol>)</symbol>\n" "</term>\n"]))])
+    (let [[rest-after-expr expr-vm]
+          (compile-expression remaining fn-name class-name symbol-table)]
+      [(rest rest-after-expr) expr-vm])
 
-    ;; Fall 2: varName[ expression ]
+    ;; Fall 2: varName[ expression ] - KORRIGIERT
     (and (re-matches identifier-regex current)
          (= "[" (first remaining)))
-    (let [[inner-rest expr-xml] (compile-expression (rest remaining) [])]
-      [(rest inner-rest)
-       (into xml-lines
-             (concat
-               ["<term>\n"
-                (format "<identifier>%s</identifier>\n" current)
-                "<symbol>[</symbol>\n"]
-               expr-xml
-               ["<symbol>]</symbol>\n" "</term>\n"]))])
+    (let [var-name current
+          full-var-name (str class-name "." var-name)
+          ;; Suche zuerst im Subroutine-Scope, dann im Klassen-Scope
+          var-info (or (get-in symbol-table [fn-name full-var-name])
+                       (get-in symbol-table [:class full-var-name]))
+          _ (when (nil? var-info)
+              (throw (ex-info (str "Variable nicht gefunden: " full-var-name)
+                              {:variable current :fn-name fn-name :class-name class-name})))
+          segment (kind->segment (:kind var-info))
+
+          ;; Überspringe "[" und kompiliere den Index-Ausdruck
+          [rest-after-index index-vm] (compile-expression (rest remaining) fn-name class-name symbol-table)]
+
+      [(rest rest-after-index)
+       (concat index-vm
+               [(str "push " segment " " (:# var-info) "\n")
+                "add\n"
+                "pop pointer 1\n"
+                "push that 0\n"])])
 
     ;; Fall 3: subroutineCall
     (and (re-matches identifier-regex current)
          (or (= "(" (first remaining))
              (= "." (first remaining))))
-    (let [[rest-tokens call-xml] (compile-subroutine-call full-code [])]
-      [rest-tokens
-       (into xml-lines
-             (concat ["<term>\n"] call-xml ["</term>\n"]))])
+    (compile-subroutine-call full-code fn-name class-name symbol-table)
 
-    ;; Fall 5: simple term
+    ;; Fall 4: simple term
     (or (re-matches integer-constant-regex current)
-        (re-matches string-constant-regex  current)
+        (re-matches string-constant-regex current)
         (re-matches keyword-constant-regex current)
-        (re-matches identifier-regex       current))
-    (compile-simple-term full-code xml-lines)
+        (re-matches identifier-regex current))
+    (compile-simple-term full-code fn-name class-name symbol-table)
 
-    ;; Fall 6: unaryOp regex
+    ;; Fall 5: unaryOp term
     (re-matches unary-op-regex current)
-    (let [[rest-tokens inner-xml] (compile-term remaining [])]
+    (let [[rest-tokens inner-vm] (compile-term remaining fn-name class-name symbol-table)
+          op-cmd ({"-" "neg\n" "~" "not\n"} current)]
       [rest-tokens
-       (into xml-lines
-             (concat
-               ["<term>\n" "<symbol>" current "</symbol>\n"]
-               inner-xml
-               ["</term>\n"]))])
+       (concat inner-vm [op-cmd])])
 
     :else
     ;; kein Term gefunden
-    [full-code (into xml-lines ["</term>\n"])]))
+    [full-code []]))
 
+(def vm-operators
+  {"+" "add\n"
+   "-" "sub\n"
+   "*" "call Math.multiply 2\n"
+   "/" "call Math.divide 2\n"
+   "&" "and\n"
+   "&amp;" "and\n"
+   "|" "or\n"
+   "<" "lt\n"
+   "&lt;" "lt\n"
+   ">" "gt\n"
+   "&gt;" "gt\n"
+   "=" "eq\n"})
+
+; TODO: Prüfen
 (defn compile-expression
-  "Returns [rest-tokens xml-lines] after consuming an expression: term (op term)*."
-  [[current & remaining :as full-code] xml-lines]
-  (let [xml-opened (into xml-lines ["<expression>\n"])
-        [rest-tks term-xml] (compile-term full-code [])
-        xml-init (into xml-opened term-xml)]
-    (loop [[c & rem :as code] rest-tks
-           xml xml-init]
-      ;; Falls: operator gefolgt von term
-      (if (and c (re-matches op-regex c))
-        (let [[next-rest term2-xml] (compile-term rem [])
-              op-xml (format "<symbol>%s</symbol>\n" c)
-              xml-with-op (conj xml op-xml)
-              xml-new (into xml-with-op term2-xml)]
-          (recur next-rest xml-new))
-        ;; Ausdruck beendet
-        [code (conj xml "</expression>\n")]))))
+  "Returns [rest-tokens vm-lines] after consuming an expression: term (op term)*."
+  [tokens fn-name class-name symbol-table]
+  (let [[rest-tks term-vm] (compile-term tokens fn-name class-name symbol-table)]
+    (loop [tokens rest-tks
+           vm-code term-vm]
+      (if-let [op-token (first tokens)]
+        (if (re-matches op-regex op-token)
+          (let [next-tokens (rest tokens)
+                [rest-after-term term-vm-code] (compile-term next-tokens fn-name class-name symbol-table)
+                operator-cmd (get vm-operators op-token)]
+            (recur rest-after-term (concat vm-code term-vm-code [operator-cmd])))
+          [tokens vm-code]) ; Kein Operator -> Ende
+        [tokens vm-code])))) ; Keine Tokens mehr -> Ende
 
-
+; NOTE: Mostly checked
 (defn compile-simple-term
-  "Returns [remaining-code xml-lines]"
-  [[current & remaining :as full-code] xml-lines]
-  (let [tagged-term
-        (cond
-          (re-matches integer-constant-regex current)
-          ["<term>\n" "<integerConstant>" current "</integerConstant>\n" "</term>\n"]
-
-          (re-matches string-constant-regex current)
-          ["<term>\n" "<stringConstant>" (prune-string current) "</stringConstant>\n" "</term>\n"]
-
-          (re-matches keyword-constant-regex current)
-          ["<term>\n" "<keyword>" current "</keyword>\n" "</term>\n"]
-
-          (re-matches identifier-regex current)
-          ["<term>\n" "<identifier>" current "</identifier>\n" "</term>\n"])]
-
-    [remaining (into xml-lines tagged-term)]
-    ))
-
-(defn compile-expression-list
-  "Returns [remaining-code xml-lines]"
-  [tokens xml-lines]
-  (let [start-xml (conj xml-lines "<expressionList>\n")]
-    (if (= (first tokens) ")")
-      [(rest tokens) (into start-xml ["</expressionList>\n" "<symbol>)</symbol>\n"])]
-      ;; Mindestens eine Expression vorhanden
-      (loop [toks tokens
-             xml  start-xml]
-        (let [[after-expr xml-after-expr] (compile-expression toks xml)]
-          (if (not= (first after-expr) ",")
-            ;; Kein weiteres Komma -> Ende der Liste
-            [after-expr (into xml-after-expr ["</expressionList>\n"])]
-            ;; Komma gefunden -> nächste Expression verarbeiten
-            (let [[_comma & after-comma] after-expr]
-              (recur after-comma
-                     (conj xml-after-expr "<symbol>,</symbol>\n")))))))))
-
-
-
-
-(defn compile-subroutine-call
-  "Returns [remaining-code xml-lines]"
-  [[current & remaining :as full-code] xml-lines]
-
+  "Returns [remaining-code vm-lines]"
+  [[current & remaining :as full-code] fn-name class-name symbol-table]
   (cond
-    ; Edit: Mit Rest selbst aufrufen
-    ; Öffnende Klammer löst compile-expression-list aus, diese muss bei ")" zurückkehren
-    (= current "(")
-    (apply compile-subroutine-call
-           (compile-expression-list remaining (into xml-lines ["<symbol>" current "</symbol>\n"]) ))
+    ;Integer einfach pushen
+    (re-matches integer-constant-regex current)
+    [remaining [(str "push constant " current "\n")]]
 
-    (= current ".") (recur remaining (into xml-lines ["<symbol>" current "</symbol>\n"]) )
+    ;String schrittweise aus Chars aufbauen
+    (re-matches string-constant-regex current)
+    (let [pruned-str (prune-string current)
+          str-length (count pruned-str)]
+      [remaining
+       (concat
+         [(str "push constant " str-length "\n")
+          "call String.new 1\n"]
+         (mapcat (fn [c]
+                   [(str "push constant " (int c) "\n")
+                    "call String.appendChar 2\n"])
+                 pruned-str))])
 
-    (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"]) )
+    (re-matches keyword-constant-regex current)
+    (case current
+      "true"  [remaining ["push constant 0\n" "not\n"]]
+      "false" [remaining ["push constant 0\n"]]
+      "null"  [remaining ["push constant 0\n"]]
+      "this"  [remaining ["push pointer 0\n"]])
 
-    (= ")" current) (recur remaining (into xml-lines ["<symbol>" ")" "</symbol>\n"]))
+    (re-matches identifier-regex current)
+    (let [full-var-name (str class-name "." current)
+          var-info (if (get-in symbol-table [fn-name full-var-name])
+                     (get-in symbol-table [fn-name full-var-name])
+                     (get-in symbol-table [:class full-var-name]))
+          segment (kind->segment (:kind var-info))]
+      [remaining [(str "push " segment " " (:# var-info) "\n")]])
 
-    ; Edit: Einfach zurückkehren
     :else
-    [full-code xml-lines]
-    ; (conj xml-lines "</term>\n") ?
-    ; </term> nicht, wenn wir aus ) kommen?!?!
-    )
-  )
+    [full-code []]))
+
+; TODO: Überprüfen
+(defn compile-expression-list
+  "Returns [rest-tokens vm-lines arg-count]"
+  [tokens fn-name class-name symbol-table]
+  (loop [tokens tokens
+         vm-code []
+         arg-count 0]
+    (if (or (empty? tokens) (= ")" (first tokens)))
+      [tokens vm-code arg-count]
+      (let [[tokens-after-expr vm-expr] (compile-expression tokens fn-name class-name symbol-table)
+            new-count (inc arg-count)
+            new-vm (concat vm-code vm-expr)]
+        (cond
+          (and (seq tokens-after-expr) (= "," (first tokens-after-expr)))
+          (recur (rest tokens-after-expr) new-vm new-count)
+          :else
+          [tokens-after-expr new-vm new-count])))))
+
+; TODO: Überprüfen
+(defn compile-subroutine-call
+  "Returns [remaining-tokens vm-lines]"
+  [[current & remaining :as tokens] fn-name class-name symbol-table]
+  (let [;; Hilfsfunktion für Variablen-Lookup
+        get-var-info (fn [name]
+                       (let [full-name   (str class-name "." name)
+                             local-scope (get symbol-table fn-name)]
+                         (or (get local-scope full-name)
+                             (get-in symbol-table [:class full-name]))))
+        ;; Hilfsfunktion für Push-Befehl (verwendet kind->segment)
+        push-var-cmd (fn [var-info]
+                       (let [kind-str (:kind var-info)
+                             segment  (kind->segment kind-str)
+                             index    (:# var-info)]
+                         (str "push " segment " " index "\n")))]
+    (if (and (re-matches identifier-regex current)
+             (= "(" (first remaining)))
+      ;; Fall 1: Direkter Aufruf (Methode der aktuellen Klasse)
+      (let [sub-name            current
+            [tokens-after-expr vm-expr n-args]
+            (compile-expression-list (rest remaining) fn-name class-name symbol-table)
+            tokens-after-close   (rest tokens-after-expr)
+            full-name            (str class-name "." sub-name)]
+        [tokens-after-close
+         (concat
+           ["push pointer 0\n"]      ; Aktuelles Objekt pushen
+           vm-expr
+           [(str "call " full-name " " (inc n-args) "\n")])])
+      ;; Fall 2: Aufruf mit Klasse oder Objekt
+      (let [[first-ident dot ident-sub]         (take 3 tokens)
+            tokens-after-name                   (drop 3 tokens)
+            [tokens-after-expr vm-expr n-args]
+            (compile-expression-list (rest tokens-after-name)
+                                     fn-name class-name symbol-table)
+            tokens-after-close                  (rest tokens-after-expr)
+            var-info                            (get-var-info first-ident)]
+        (if var-info
+          ;; Objektaufruf: Objekt pushen und Methode aufrufen
+          (let [class-nm  (:type var-info)
+                full-name (str class-nm "." ident-sub)]
+            [tokens-after-close
+             (concat
+               [(push-var-cmd var-info)]  ; Objekt pushen
+               vm-expr
+               [(str "call " full-name " " (inc n-args) "\n")])])
+          ;; Statischer Aufruf: Kein Objekt pushen
+          (let [full-name (str first-ident "." ident-sub)]
+            [tokens-after-close
+             (concat
+               vm-expr
+               [(str "call " full-name " " n-args "\n")])]))))))
 
 
 
@@ -359,15 +423,15 @@
 
 (defn compile-statement
   "Returns xml-lines"
-  [[current & remaining :as full-code]]
+  [[current & remaining :as full-code] fn-name class-name symbol-table]
 
   (cond
-    ; Todo anpassen
-    (= "let" current)  (compile-let-statement full-code)
-    (= "if" current)  (compile-if-statement full-code)
-    (= "while" current)  (compile-while-statement full-code)
-    (= "do" current)  (compile-do-statement full-code)
-    (= "return" current) (compile-return-statement full-code)
+    ; Todo anpassen für VM-Code Generierung
+    (= "let" current)  (compile-let-statement full-code fn-name class-name symbol-table)
+    (= "if" current)  (compile-if-statement full-code fn-name class-name symbol-table)
+    (= "while" current)  (compile-while-statement full-code fn-name class-name symbol-table)
+    (= "do" current)  (compile-do-statement full-code fn-name class-name symbol-table)
+    (= "return" current) (compile-return-statement full-code fn-name class-name symbol-table)
     ))
 
 (defn group-statements
@@ -478,214 +542,210 @@
           :else
           (recur (rest tokens) depth (conj extracted token)))))))
 
-(declare compile-expression)
-
 
 (defn compile-let-statement
-  "Returns xml-lines"
-  [[lett var-name bracket-or-equal :as full-code]]
-  (let [start-xml [(str "<letStatement>\n")
-                   (str "<keyword> let </keyword>\n")
-                   (str "<identifier> " var-name " </identifier>\n")]
-        end-xml [(str "</letStatement>\n")]]
-    (if (= "=" bracket-or-equal)
-      ; Fall 1: Einfache Zuweisung (ohne Array-Index)
-      (let [eq-xml ["<symbol>=</symbol>\n"]
-            [rest-after-expr expr-xml] (compile-expression (drop 3 full-code) [])
-            semicolon (first rest-after-expr)
-            semi-xml ["<symbol>;</symbol>\n"]
-            xml-lines (vec (concat start-xml eq-xml expr-xml semi-xml end-xml))]
-        xml-lines)
+  "Returns [remaining-tokens vm-lines]"
+  [[lett var-name next-token & rest-tokens :as tokens] fn-name class-name symbol-table]
 
-      ; Fall 2: Array-Index-Zuweisung
-      (if (= "[" bracket-or-equal)
-        (let [open-bracket-xml ["<symbol>[</symbol>\n"]
-              [rest-after-index index-expr-xml] (compile-expression (drop 3 full-code) [])
-              close-bracket (first rest-after-index)
-              close-bracket-xml ["<symbol>]</symbol>\n"]
-              rest-after-bracket (rest rest-after-index)
-              eq-sign (first rest-after-bracket)
-              eq-xml ["<symbol>=</symbol>\n"]
-              [rest-after-expr expr-xml] (compile-expression (rest rest-after-bracket) [])
-              semicolon (first rest-after-expr)
-              semi-xml ["<symbol>;</symbol>\n"]
-              xml-lines (vec (concat start-xml
-                                     open-bracket-xml
-                                     index-expr-xml
-                                     close-bracket-xml
-                                     eq-xml
-                                     expr-xml
-                                     semi-xml
-                                     end-xml))]
-          xml-lines)))))
+  ;; Lookup variable in symbol table
+  (let [get-var-info (fn [name]
+                       ; Clojure's or ist hier praktisch :D
+                       (or (get-in symbol-table [fn-name (str class-name "." name)])
+                           (get-in symbol-table [:class (str class-name "." name)])))
+        var-info    (get-var-info var-name)
+        kind-str    (:kind var-info)
+        segment     (kind->segment kind-str)
+        var-index   (str (:# var-info))]
+
+    (if (= "=" next-token)
+
+      ;; Case 1: Simple assignment (ohne Array-Index)
+      (let [[rest-after-expr vm-expr] (compile-expression rest-tokens fn-name class-name symbol-table)
+            rest-after-semi       (rest rest-after-expr)]
+        [rest-after-semi
+         (concat vm-expr
+                 [(str "pop " segment " " var-index "\n")])])
+
+      ;; Case 2: Array assignment
+      (when (= "[" next-token)
+        (let [[rest-after-index vm-index] (compile-expression rest-tokens fn-name class-name symbol-table)
+              rest-after-bracket       (rest rest-after-index)
+              [rest-after-expr vm-expr] (compile-expression (rest rest-after-bracket)
+                                                            fn-name class-name symbol-table)
+              rest-after-semi          (rest rest-after-expr)]
+
+          [rest-after-semi
+           (concat
+             vm-index             ; Wert der expression in []
+             [(str "push " segment " " var-index "\n")           ; Array-Basisadresse (also *(varName))
+              "add\n"]
+             vm-expr              ; Ausdruck auswerten
+             ["pop temp 0\n"
+              "pop pointer 1\n"     ; THAT setzen
+              "push temp 0\n"
+              "pop that 0\n"])]     ; Wert (also das mit vm-expr berechnete) ins Array schreiben
+          )))))
 
 
-(compile-let-statement ["let" "i" "[" "5" "]" "=" "3" ";"])
+
+;(compile-let-statement ["let" "i" "[" "5" "]" "=" "3" ";"])
 
 
 (defn compile-if-statement
-  "Returns [remaining-tokens xml-lines]"
-  [[if-token & remaining :as tokens]]
-  (when (not= if-token "if")
-    (throw (Exception. "Not an if statement")))
+  "Returns [remaining-tokens vm-lines]"
+  [[if-token & remaining :as tokens] fn-name class-name symbol-table]
+  (let [[_open-paren            & rest-after-open]     remaining
 
-  (let [start-xml [(str "<ifStatement>\n")
-                   (str "<keyword> if </keyword>\n")]
+        [rest-after-expr vm-expr] (compile-expression rest-after-open fn-name class-name symbol-table)
 
-        ; Process opening parenthesis
-        open-paren (first remaining)
-        _ (when (not= open-paren "(")
-            (throw (Exception. (str "Expected ( after if, found " open-paren))))
-        open-paren-xml ["<symbol>(</symbol>\n"]
+        [close-paren             & rest-after-close]    rest-after-expr
 
-        ; Process expression inside ()
-        [rest-after-expr expr-xml] (compile-expression (rest remaining) [])
-        close-paren (first rest-after-expr)
-        _ (when (not= close-paren ")")
-            (throw (Exception. (str "Expected ) after expression, found " close-paren))))
-        close-paren-xml ["<symbol>)</symbol>\n"]
+        [open-brace              & rest-after-brace]    rest-after-close
 
-        ; Process opening brace for if block
-        rest-after-paren (rest rest-after-expr)
-        open-brace (first rest-after-paren)
-        _ (when (not= open-brace "{")
-            (throw (Exception. (str "Expected { after ), found " open-brace))))
-        open-brace-xml ["<symbol>{</symbol>\n"]
+        [if-block-tokens rest-after-if-block]            (extract-until-balanced rest-after-brace)
+        if-statement-groups                             (group-statements if-block-tokens)
+        vm-if-block                                      (reduce concat
+                                                                 (map #(compile-statement % fn-name class-name symbol-table)
+                                                                      if-statement-groups))
 
-        ; Extract if-block tokens (without outer braces)
-        [if-block-tokens rest-after-if] (extract-until-balanced (rest rest-after-paren))
-        ; Group into individual statements
-        if-statement-groups (group-statements if-block-tokens)
-        ; Compile each statement group
-        if-statements-xml (vec  (concat ["<statements>\n"]
-                                        (reduce concat (mapcat compile-statement if-statement-groups))
-                                        ["</statements>\n"]))
-        close-brace-xml ["<symbol>}</symbol>\n"]
+        ;; Neue Labels mit korrekter Logik
+        true-label  (str "IF_TRUE_" (gensym))
+        false-label (str "IF_FALSE_" (gensym))
+        end-label   (str "IF_END_" (gensym))
 
-        ; Check for else clause
-        [else-xml rest-final] (if (and (seq rest-after-if)
-                                       (= (first rest-after-if) "else"))
-                                (let [else-keyword ["<keyword> else </keyword>\n"]
-                                      rest-after-else (rest rest-after-if)
-                                      else-open-brace (first rest-after-else)
-                                      _ (when (not= else-open-brace "{")
-                                          (throw (Exception. (str "Expected { after else, found " else-open-brace))))
-                                      else-open-brace-xml ["<symbol>{</symbol>\n"]
+        [else? else-vm-block rest-after-else]
+        (if (and (seq rest-after-if-block)
+                 (= (first rest-after-if-block) "else"))
+          (let [[_else-kw             & rest-after-else-kw]    rest-after-if-block
+                [_open-brace2         & rest-after-open2]      rest-after-else-kw
+                [else-block-tokens    rest-after-else-block] (extract-until-balanced rest-after-open2)
+                else-statement-groups                       (group-statements else-block-tokens)
+                else-vm-block                                (reduce concat
+                                                                     (map #(compile-statement % fn-name class-name symbol-table)
+                                                                          else-statement-groups))]
+            [true else-vm-block rest-after-else-block])
+          [false [] rest-after-if-block])
 
-                                      ; Extract else-block tokens
-                                      [else-block-tokens else-rest] (extract-until-balanced (rest rest-after-else))
-                                      ; Group into individual statements
-                                      else-statement-groups (group-statements else-block-tokens)
-                                      ; Compile each statement group
-                                      else-statements-xml (vec (concat ["<statements>\n"]
-                                                                       (mapcat compile-statement else-statement-groups)
-                                                                       ["</statements>\n"]))
-                                      else-close-brace-xml ["<symbol>}</symbol>\n"]
-                                      else-xml (vec (concat else-keyword
-                                                            else-open-brace-xml
-                                                            else-statements-xml
-                                                            else-close-brace-xml))]
-                                  [else-xml else-rest])
-                                [[] rest-after-if])
+        ;; Korrigierte VM-Code Generierung
+        vm-code
+        (if else?
+          ;; Mit else-Zweig
+          (concat
+            vm-expr
+            [(str "if-goto " true-label "\n")   ; Wenn wahr, springe zum if-Block
+             (str "goto " false-label "\n")     ; Sonst springe zum else-Block
+             (str "label " true-label "\n")]
+            vm-if-block
+            [(str "goto " end-label "\n")       ; Nach if-Block zu Ende springen
+             (str "label " false-label "\n")]   ; Else-Label setzen
+            else-vm-block
+            [(str "label " end-label "\n")])    ; End-Label setzen
 
-        ; Build final XML
-        xml-lines (vec (concat start-xml
-                               open-paren-xml
-                               expr-xml
-                               close-paren-xml
-                               open-brace-xml
-                               if-statements-xml
-                               close-brace-xml
-                               else-xml
-                               ["</ifStatement>\n"]))]
-     xml-lines))
+          ;; Ohne else-Zweig
+          (concat
+            vm-expr
+            [(str "if-goto " true-label "\n")   ; Wenn wahr, springe zum if-Block
+             (str "goto " false-label "\n")     ; Sonst springe zum Ende
+             (str "label " true-label "\n")]
+            vm-if-block
+            [(str "label " false-label "\n")]))] ; Ende-Label setzen
+
+    [rest-after-else vm-code]))
 
 
-(compile-if-statement ["if" "(" "true" ")" "{" "let" "i" "=" "1" ";" "}"])
+
+;(compile-if-statement ["if" "(" "true" ")" "{" "let" "i" "=" "1" ";" "}"])
 
 
 (defn compile-while-statement
-  "Returns xml-lines"
-  [[while-token & remaining :as tokens]]
-  (when (not= while-token "while")
-    (throw (Exception. "Not a while statement")))
+  "Returns [remaining-tokens vm-lines]"
+  [[while-token & remaining :as tokens] fn-name class-name symbol-table]
+  (assert (= "while" while-token) "Expected 'while' keyword")
 
-  (let [start-xml [(str "<whileStatement>\n")
-                   (str "<keyword> while </keyword>\n")]
+  (let [start-label (str "WHILE_START_" (gensym))
+        end-label (str "WHILE_END_" (gensym))
 
-        ; Process opening parenthesis
-        open-paren (first remaining)
-        open-paren-xml ["<symbol>(</symbol>\n"]
-        ; Process expression inside ()
-        [rest-after-expr expr-xml] (compile-expression (rest remaining) [])
-        close-paren (first rest-after-expr)
-        close-paren-xml ["<symbol>)</symbol>\n"]
+        ;; Öffnende Klammer überspringen
+        [_open-paren & rest-after-open] remaining
+        _ (assert (= "(" _open-paren))
 
-        ; Process opening brace for while block
-        rest-after-paren (rest rest-after-expr)
-        open-brace (first rest-after-paren)
-        open-brace-xml ["<symbol>{</symbol>\n"]
-        ; Extract while-block tokens (without outer braces)
-        [while-block-tokens rest-after-while] (extract-until-balanced (rest rest-after-paren))
-        ; Group into individual statements
+        ;; Bedingungsausdruck kompilieren
+        [rest-after-expr vm-expr] (compile-expression rest-after-open fn-name class-name symbol-table)
+
+        ;; Schließende Klammer überspringen
+        [close-paren & rest-after-close] rest-after-expr
+        _ (assert (= ")" close-paren))
+
+        ;; Öffnende geschweifte Klammer überspringen
+        [open-brace & rest-after-brace] rest-after-close
+        _ (assert (= "{" open-brace))
+
+        ;; While-Block-Tokens extrahieren
+        [while-block-tokens rest-after-while] (extract-until-balanced rest-after-brace)
+
+        ;; While-Block-Statements gruppieren und kompilieren
         while-statement-groups (group-statements while-block-tokens)
-        ; Compile each statement group
-        while-statements-xml (vec (concat ["<statements>\n"] ;NOTE Hier schlägt was fehl in der Rekursion
-                                          (flatten (mapcat compile-statement while-statement-groups))
-                                          ["</statements>\n"]))
-        ; Process closing brace (already handled by extract-until-balanced, so we just output it)
-        close-brace-xml ["<symbol>}</symbol>\n"]
-        ; Build final XML
-        xml-lines (vec (concat start-xml
-                               open-paren-xml
-                               expr-xml
-                               close-paren-xml
-                               open-brace-xml
-                               while-statements-xml
-                               close-brace-xml
-                               ["</whileStatement>\n"]))]
-    xml-lines))
+        vm-while-body (reduce concat (map #(compile-statement % fn-name class-name symbol-table) while-statement-groups))
 
-(compile-while-statement ["while" "(" "i" "<" "5" ")" "{" "let" "i" "=" "i" "-" "1" ";" "}"])
+        ;; VM-Code für While-Schleife generieren
+        vm-code
+        (concat
+          [(str "label " start-label "\n")] ; Schleifenanfang
+          vm-expr                     ; Bedingung auswerten
+          ["not\n"]                     ; Negieren, wir wollen ja ausführen, solange bspw. (i<3) ist und springen, falls nicht wahr
+          [(str "if-goto " end-label "\n")  ; Wenn false (0), springe zum Ende
+           vm-while-body              ; Schleifenkörper
+           (str "goto " start-label "\n")   ; Zurück zum Anfang springen
+           (str "label " end-label "\n")])] ; Schleifenende
+
+    [rest-after-while vm-code]))
+
+;(compile-while-statement ["while" "(" "i" "<" "5" ")" "{" "let" "i" "=" "i" "-" "1" ";" "}"])
 
 (defn compile-do-statement
-  "Returns [remaining-tokens xml-lines]"
-  [[do & remaining :as tokens]]
-  (let [start-xml [(str "<doStatement>\n")
-                   (str "<keyword> do </keyword>\n")]
-        [after-call call-xml] (compile-subroutine-call remaining [])
-        semi-xml ["<symbol> ; </symbol>\n"]
-        end-xml ["</doStatement>\n"]
-        xml-lines (vec (concat start-xml
-                               call-xml
-                               semi-xml
-                               end-xml))]
-     xml-lines))
+  "Returns [remaining-tokens vm-lines]"
+  [[do-token & remaining :as tokens] fn-name class-name symbol-table]
 
-(compile-do-statement ["do" "Output" "." "print" "(" "5" "," "6" ")" ";"])
+  (let [[tokens-after-call vm-call] (compile-subroutine-call remaining fn-name class-name symbol-table)
+        rest-after-semi (rest tokens-after-call)]
+
+    [rest-after-semi
+     (concat vm-call
+             ["pop temp 0\n"])]))
+
+;(compile-do-statement ["do" "Output" "." "print" "(" "5" "," "6" ")" ";"])
 
 
 (defn compile-return-statement
-  "Returns [remaining-tokens xml-lines]"
-  [[return-token & remaining :as tokens]]
-  (when (not= return-token "return")
-    (throw (Exception. "Not a return statement")))
+  "Returns [remaining-tokens vm-lines]"
+  [[return-token & remaining :as tokens] fn-name class-name symbol-table]
+  (assert (= "return" return-token) "Expected 'return' keyword")
 
-  (let [start-xml [(str "<returnStatement>\n")
-                   (str "<keyword> return </keyword>\n")]
-        ; Check if there's an expression before semicolon
-        [rest-after-expr expr-xml] (if (not= (first remaining) ";")
-                                     (compile-expression remaining [])
-                                     [remaining []])
+  (let [;; Prüfen, ob ein Ausdruck vorhanden ist
+        [rest-after-expr vm-expr] (if (not= (first remaining) ";")
+                                    (compile-expression remaining fn-name class-name symbol-table)
+                                    [remaining []])
+
+        ;; Semikolon konsumieren
         semicolon (first rest-after-expr)
-        semicolon-xml ["<symbol>;</symbol>\n"]
-        xml-lines (vec (concat start-xml
-                               expr-xml
-                               semicolon-xml
-                               ["</returnStatement>\n"]))]
-     xml-lines))
+        _ (assert (= ";" semicolon) (str "Expected ';' but got " semicolon))
+        rest-after-semi (rest rest-after-expr)
 
-(compile-return-statement ["return" "i" "+" "5" ";"])
+        ;; VM-Code generieren
+        vm-code (if (empty? vm-expr)
+                  ;; Kein Ausdruck (void-Methode) - 0 pushen
+                  ["push constant 0\n" "return\n"]
+
+                  ;; Mit Ausdruck - generierten Code + return
+                  (concat vm-expr ["return\n"]))]
+
+    [rest-after-semi vm-code]))
+
+;(compile-return-statement ["return" "i" "+" "5" ";"])
+
+
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; PROGRAM STRUCTURE
@@ -714,44 +774,21 @@
 ; ["if" "(" "true" ")" "{" "let" "i" "=" "2" ";" "}"]
 ; ["while" "(" "2" "<" "3" ")" "{" "let" "i" "=" "2" ";" "let" "i" "=" "3" ";" "}"]]
 
-(defn var-dec-to-xml
-  [[var type name & r]]
-  (let [start-xml ["<varDec>\n" "<keyword>var</keyword>\n"]
-        type-xml  (if (re-matches #"int|char|boolean" type)
-                    ["<keyword>" type "</keyword>\n"]
-                    ["<identifier>" type "</identifier>\n"])
-        name-xml  ["<identifier>" name "</identifier>\n"]
-        middle    (loop [[t1 t2 & re] r
-                         xml []]
-                    (if (= ";" t1)
-                      (into xml ["<symbol>;</symbol>\n"])
-                      (recur re
-                             (into xml
-                                   ["<symbol>,</symbol>\n"
-                                    "<identifier>" t2 "</identifier>\n"]))))
-        end-xml   ["</varDec>\n"]]
-    (concat start-xml type-xml name-xml middle end-xml)))
-
-(var-dec-to-xml ["var" "int" "i" "," "sum" "," "z" ";"])
 
 (defn compile-subroutine-body
   "Returns xml-lines"
-  [[open-curly & r]]
+  [[open-curly & r] fn-name class-name symbol-table]
   (let [; Jeweils closing } des bodys wegnehmen
         var-decs-code (pr2 (take-while #(not (re-matches #"let|if|while|do|return" %)) (butlast r)))
         statements-code (pr2 (drop-while #(not (re-matches #"let|if|while|do|return" %)) (butlast r)))
-        start-xml ["<subroutineBody>\n" "<symbol>{</symbol>\n"]
-        end-xml ["<symbol>}</symbol>\n" "</subroutineBody>\n"]
-        var-decs-split-code (pr2 (split-coll-by-sep var-decs-code ";"))
-        var-decs-xml (pr2 (reduce concat (map var-dec-to-xml var-decs-split-code)))
-        ;; TODO: group-statements korrekt??
+
+        ; varDecs sind uns jetzt egal, das abstrahieren wir mit "function Main.main 3" direkt, Typsicherheit haben wir nicht
+        ;var-decs-split-code (pr2 (split-coll-by-sep var-decs-code ";"))
+        ;var-decs-xml (pr2 (reduce concat (map var-dec-to-xml var-decs-split-code)))
         statements-split-code (pr2 (group-statements statements-code))
-        ;; Todo compile statements anpassen
-        statements-start ["<statements>\n"]
-        statements-xml (reduce concat (map compile-statement statements-split-code))
-        statements-end ["</statements>\n"]
-        xml (concat start-xml var-decs-xml statements-start statements-xml statements-end end-xml)]
-    xml))
+
+        statements-vm-code (flatten (map #(compile-statement % fn-name class-name symbol-table) statements-split-code))]
+    statements-vm-code))
 
 
 (defn group-subroutine-decs
@@ -776,23 +813,6 @@
 ;;     ["method"   "String" "minor" "(" ")" "{"]]
 
 
-(defn param-to-xml
-  [[type name comma]]
-  (if (re-matches #"int|char|boolean" type)
-    ["<keyword>" type "</keyword>\n" "<identifier>" name "</identifier>\n" "<symbol>,</symbol>\n"]
-    ["<identifier>" type "</identifier>\n" "<identifier>" name "</identifier>\n" "<symbol>,</symbol>\n"]))
-
-(defn compile-parameter-list
-  "Returns xml-lines"
-  ; [[current & remaining :as full-code] xml-lines]
-  [r]
-  (let [params-code (butlast r)
-        start-xml ["<symbol>" "(" "</symbol>\n" "<parameterList>\n"]
-        sep-code (split-coll-by-sep params-code ",")
-        param-xml (butlast (reduce concat (map param-to-xml sep-code))) ;butlast entfern das "<symbol>,<symbol> des letzen Mappings!
-        end-xml ["</parameterList>\n" "<symbol>" ")" "</symbol>\n"]]
-    (concat start-xml param-xml end-xml)))
-
 (defn split-coll-at-index
   "Teilt `coll` so auf, dass alle Elemente bis inklusive `idx`
    in der ersten, und der Rest in der zweiten Coll landen."
@@ -800,117 +820,142 @@
   (split-at (inc idx) coll))
 
 (defn compile-single-subroutine-dec
-  [[what type subroutineName open-parantheses & r]]
-  (let [closing-parantheses-index (.indexOf r ")")
-        [parameter-list-code subroutine-body-code] (split-coll-at-index r closing-parantheses-index)
-        start-xml ["<subroutineDec>\n" "<keyword>" what "</keyword>\n"]
-        type-xml (if (re-matches #"void|int|char|boolean" type)
-                   ["<keyword>" type "</keyword>\n"]
-                   ["<identifier>" type "</identifier>\n"])
-        name-xml ["<identifier>" subroutineName "</identifier>\n"]
-        parameter-list-xml (pr2 (compile-parameter-list parameter-list-code))
+  [class-name symbol-table [what type subroutineName open-parantheses & r]]
+  (let [cnt (count (get symbol-table subroutineName))
+        local-var-count (count (filter #(= "var" (:kind %))
+                                       (vals (get symbol-table subroutineName))))
+        start-vm-code ["function " (str class-name "." subroutineName) " " local-var-count "\n"]
 
-        ; TODO: compile-subroutine-body anpassen, compile-parameter-list klappt
-        subroutine-body-xml (pr2 (compile-subroutine-body subroutine-body-code))
-        end-xml ["</subroutineDec>\n"]]
-    (concat start-xml type-xml name-xml parameter-list-xml subroutine-body-xml end-xml)
+        ;; TODO: Etwas weiteren Code vorher
+        ;;  method -> lade this push argument 0, pop pointer 0
+        ;;  constructor -> push constant nFields, call Memory.alloc 1, pop pointer 0
+        ;;  Reminder: pop pointer 0 setzt this
+        ;;            pop pointer 1 setzt that
+        middle-code (if (= "method" what)
+                      ["push argument 0\n" "pop pointer 0\n"]
+                      (if (= "constructor" what)
+                        [(str "push constant " (count (filter #(= "field" (:kind %))
+                                                              (vals (:class symbol-table)))) "\n") "call Memory.alloc 1\n" "pop pointer 0\n"]
+                        []))
+        closing-parantheses-index (.indexOf r ")")
+        [parameter-list-code subroutine-body-code] (split-coll-at-index r closing-parantheses-index)
+
+        subroutine-body-vm-code (pr2 (compile-subroutine-body subroutine-body-code subroutineName class-name symbol-table))]
+    (into start-vm-code (into middle-code subroutine-body-vm-code))
     )
   )
+
+(count {:a 1 :b 2})
 
 (.indexOf ["(" "int" "x" ")" "{" ")"] ")")
 
 (defn compile-subroutine-dec
-  "Returns [remaining-code xml-lines]"
-  [[current & remaining :as full-code] xml-lines]
-  (let [; } der Klasse wird vom Aufrufer entfernt!
-        subroutine-dec-code (into [] (drop-while #(not (re-matches #"function|method|constructor" %)) full-code))
+  "Returns vm-code"
+  [[current & remaining :as full-code] class-name symbol-table]
+  (let [subroutine-dec-code (into [] (drop-while #(not (re-matches #"function|method|constructor" %)) full-code))
         blocks (pr2 (into [] (group-subroutine-decs subroutine-dec-code)))
-        dec-xml (reduce concat (map compile-single-subroutine-dec blocks))]
-    dec-xml
-    )
+        declarations-vm-code (pr2 (reduce concat (map (partial compile-single-subroutine-dec class-name symbol-table) blocks)))
+        useless (print 1)]
+    declarations-vm-code
+    ))
 
-  ;(cond
-  ;  (re-matches #"constructor|function|method" current) (recur remaining (into xml-lines ["<subroutineDec>\n" "<keyword>" current "</keyword>\n"]))
-  ;  (re-matches #"void|int|char|boolean" current) (recur remaining (into xml-lines ["<keyword>" current "</keyword>\n"]))
-  ;  (re-matches identifier-regex current) (recur remaining (into xml-lines ["<identifier>" current "</identifier>\n"])) ; Fall type UND Fall subroutineName
-  ;
-  ;  (= "(" current) (apply compile-subroutine-dec (compile-parameter-list full-code xml-lines))
-  ;  (= "{" current) (apply compile-subroutine-dec (compile-subroutine-body full-code xml-lines))
-  ;  :else [full-code xml-lines] ; ACHTUNG: compile-subroutine-body schließt </subroutineDec> da wir mehrere hintereinander haben KÖNNTEN
-  ;  )
-  )
-
-(compile-subroutine-dec ["function" "int" "a" "(" ")" "{" "}" "method" "int" "b" "(" "int" "x" "," "int" "y" ")" "{" "}"] [])
+;(compile-subroutine-dec
+;  ["function" "int" "a" "(" ")" "{" "}" "method" "int" "b" "(" "int" "x" "," "int" "y" ")" "{" "}"] [])
 
 ;;;; classVarDec
 
-(defn compile-single-class-var-dec
-  "Returns XML for one class-var-dec"
-  [[what type name & r]]
-  (if (nil? what)
-    []
-    (let [start ["<classVarDec>\n"]
-          what-xml ["<keyword>" what "</keyword>\n"]
-          type-xml (if (re-matches #"int|char|boolean" type) ["<keyword>" type "</keyword>\n"] ["<identifier>" type "</identifier>\n"])
-          var-name-xml ["<identifier>" name "</identifier>\n"]
-          middle (loop [[t1 t2 & re] r
-                        xml []]
-                   (if (= ";" t1)
-                     (into xml ["<symbol>;</symbol>\n"])
-                     (recur re (into xml ["<symbol>" "," "</symbol>\n" "<identifier>" t2 "</identifier>\n"])))
-                   )
-          end ["</classVarDec>\n"]]
-      (into start (into what-xml (into type-xml (into var-name-xml (into middle end))))))))
+;(defn compile-single-class-var-dec
+;  "Returns XML for one class-var-dec"
+;  [[what type name & r]]
+;  (if (nil? what)
+;    []
+;    (let [start ["<classVarDec>\n"]
+;          what-xml ["<keyword>" what "</keyword>\n"]
+;          type-xml (if (re-matches #"int|char|boolean" type) ["<keyword>" type "</keyword>\n"] ["<identifier>" type "</identifier>\n"])
+;          var-name-xml ["<identifier>" name "</identifier>\n"]
+;          middle (loop [[t1 t2 & re] r
+;                        xml []]
+;                   (if (= ";" t1)
+;                     (into xml ["<symbol>;</symbol>\n"])
+;                     (recur re (into xml ["<symbol>" "," "</symbol>\n" "<identifier>" t2 "</identifier>\n"])))
+;                   )
+;          end ["</classVarDec>\n"]]
+;      (into start (into what-xml (into type-xml (into var-name-xml (into middle end))))))))
 
-(compile-single-class-var-dec ["static" "int" "hello" "," "world" "," "is" "," "outdated" ";"])
+;(compile-single-class-var-dec ["static" "int" "hello" "," "world" "," "is" "," "outdated" ";"])
 
 
-(defn compile-class-var-decs
-  "Returns xml-lines"
-  [[current & remaining :as full-code] xml-lines]
 
-  (let [class-var-dec-code (into [] (take-while #(not (re-matches #"function|method|constructor" %)) full-code))
-        blocks (into [] (split-coll-by-sep class-var-dec-code ";"))
-        dec-xml (into [] (reduce concat (map compile-single-class-var-dec blocks)))]
-    dec-xml))
+;(compile-parameter-list ["(" "int" "x" "," "int" "y" "," "SquareGame" "squareGame" ")"])
 
-(compile-parameter-list ["(" "int" "x" "," "int" "y" "," "SquareGame" "squareGame" ")"])
+
+
+
+
+
+
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; FÜR COMPILER 2 ;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+; NOTE: Bei method beginnen die Argumente bei 1 und "this" bekommt den 0-ten Eintrag
+; EDIT: Kleiner Fehler, es wurde type mit "method" verglichen statt what
 (defn gen-tab-for-func
   "Generates a symbol table for one function/method"
-  [[_ type subroutine-name open-paren & remaining :as code] class-name]
-  (let [[param-list-tokens after-params] (split-at (count (take-while #(not= ")" %) remaining))
-                                                   remaining)
-        ;; Remove trailing ")" from after-params
+  [[what type subroutine-name open-paren & remaining :as code] class-name]
+  (let [[param-list-tokens after-params]
+        (split-at (count (take-while #(not= ")" %) remaining))
+                  remaining)
         after-params' (rest after-params)
+        param-pairs   (->> param-list-tokens
+                           (remove #(= "," %))
+                           (partition 2))
+        ;; Generate indices based on subroutine type
+        n-params     (count param-pairs)
+        [indices param-pairs']
+        (if (= "method" what)
+          ;; For methods: add 'this' as first parameter
+          [(range 0 (inc n-params))
+           (cons [class-name "this"] param-pairs)]
+          ;; For functions/constructors: use as-is
+          [(range 0 n-params)
+           param-pairs])
 
-        ;; Process parameters: group into [type name] pairs
-        param-pairs (->> param-list-tokens
-                         (remove #(= "," %))
-                         (partition 2))
-        table-with-args (reduce (fn [tab [idx [typ name]]]
-                                  (assoc tab (str class-name "." name) {:type typ :kind "argument" :# idx}))
-                                {}
-                                (map-indexed vector param-pairs))
-        [body-tokens after-body] (extract-until-balanced-full-method after-params')
-        var-decls (filter #(= "var" (first %))
-                          (split-coll-by-sep (rest body-tokens) ";"))
-        process-var-dec (fn [tab [var-keyword var-type & names-and-commas]]
-                          (let [;; Remove the trailing semicolon from names-and-commas
-                                names-and-commas' (butlast names-and-commas)
-                                var-names (remove #(= "," %) names-and-commas')
-                                count (count (filter #(= (:kind %) "var") (vals tab)))]
-                            (reduce (fn [acc name]
-                                      (assoc acc (str class-name "." name) {:type var-type
-                                                       :kind "var"
-                                                       :# count}))
-                                    tab
-                                    var-names)))
-        final-table (reduce process-var-dec table-with-args var-decls)]
+        table-with-args
+        (reduce (fn [tab [idx [typ name]]]
+                  (assoc tab (str class-name "." name)
+                             {:type typ :kind "argument" :# idx}))
+                {}
+                (map vector indices param-pairs'))
+
+        [body-tokens after-body]
+        (extract-until-balanced-full-method after-params')
+        var-decls
+        (filter #(= "var" (first %))
+                (split-coll-by-sep (rest body-tokens) ";"))
+
+        process-var-dec
+        (fn [tab [var-keyword var-type & names-and-commas]]
+          (let [names-and-commas' (butlast names-and-commas)
+                var-names         (remove #(= "," %) names-and-commas')
+                ;; Bestimme den nächsten freien Index basierend auf der aktuellen Tabelle
+                start-index       (count (filter #(= (:kind %) "var") (vals tab)))]
+            ;; Erstelle für jede Variable einen eigenen Eintrag mit aufsteigendem Index
+            (loop [new-tab tab
+                   idx      start-index
+                   [name & rest-names] var-names]
+              (if name
+                (recur (assoc new-tab (str class-name "." name)
+                                      {:type var-type :kind "var" :# idx})
+                       (inc idx)
+                       rest-names)
+                new-tab))))
+
+        final-table
+        (reduce process-var-dec table-with-args var-decls)]
     [final-table after-body]))
 
 
@@ -964,7 +1009,7 @@
 (def expression-less-test-tokens2 (vec (tokenize "src/10/ExpressionLessSquare/Square.jack")))
 
 
-;(generate-symbol-table array-test-tokens "Main")
+(generate-symbol-table array-test-tokens "Main")
 
 ;(generate-symbol-table expression-less-test-tokens "Main")
 
@@ -977,33 +1022,33 @@
 (defn compile-class
   "Returns vm code - Top level compilation function"
   ;[[current & remaining :as full-code] xml-lines]
-  [[cl cl-name brace & remaining :as full-code] class-name]
+  [[cl class-name brace & remaining :as full-code]]
 
   (when (and
           (= cl "class")
-          (re-matches identifier-regex cl-name)
+          (re-matches identifier-regex class-name)
           (= brace "{"))
     (let [symbol-table (generate-symbol-table full-code class-name)
-          class-var-dec-vm-code (doall (compile-class-var-decs (butlast remaining) []))
-          subroutine-dec-vm-code (doall (compile-subroutine-dec (butlast remaining) []))]
-      ; Mit butlast jeweils das closing } entfernen
+          ;class-var-dec-vm-code (doall (compile-class-var-decs (butlast remaining) symbol-table))
+          subroutine-dec-vm-code (pr2 (compile-subroutine-dec (butlast remaining) class-name symbol-table))]      ; Mit butlast jeweils das closing } entfernen
+      subroutine-dec-vm-code
       )))
 
 
 ;;;;;;;;;;;;;;;;;;
 ;;; Aus Compiler 1
 ;;;;;;;;;;;;;;;;;;
-(defn result-xml-to-file
+(defn result-vm-to-file
   [file-path coll]
-  (let [output-path (str/replace file-path #"\.jack$" "out.jack")]
+  (let [output-path (str/replace file-path #"\.jack$" ".vm")]
     (spit output-path (apply str coll))))
 ; oder (str/join coll)
 
 (defn compile-jack
   [filepath]
   (let [tokens (tokenize filepath)
-        compiled (doall (compile-class tokens (str/replace filepath #"\.jack$" "out.jack")))]
-    (result-xml-to-file filepath compiled)))
+        compiled (compile-class tokens)]
+    (result-vm-to-file filepath compiled)))
 
 (defn -main [& args]
   (write-tokenizer-to-file (first args))
@@ -1014,30 +1059,31 @@
 ;; ArrayTest
 ;;;;;;;;;;;;;;;;;
 
-; diff -w ArrayTest/Main.xml ArrayTest/Mainout.xml
-(compile-jack "src/10/ArrayTest/Main.jack")
+; diff -w ArrayTest/Main.jack ArrayTest/Mainout.jack
+; Diff enthält nur labels, Ausführung klappt, sobald man die Mainout.jack in Main.jack umbenennt
+;(compile-jack "src/10/ArrayTest/Main.jack")
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; ExpressionLessSquare - kompiliert teilweise nicht, daher auslassen
 ;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;
-;; Square
+;; Square - kann auch ausgeführt werden :)
 ;;;;;;;;;;;;;;;;;
 
 ; diff -w Square/Main.xml Square/Mainout.xml
-(compile-jack "src/10/Square/Main.jack")
+;(compile-jack "src/10/Square/Main.jack")
 
 ; diff -w Square/Square.xml Square/Squareout.xml
-(compile-jack "src/10/Square/Square.jack")
+;(compile-jack "src/10/Square/Square.jack")
 
 ; diff -w Square/SquareGame.xml Square/SquareGameout.xml
-(compile-jack "src/10/Square/SquareGame.jack")
+;(compile-jack "src/10/Square/SquareGame.jack")
 
 
 
 ; Alles diffs:
-; diff -w ArrayTest/Main.xml ArrayTest/Mainout.xml
+; diff -w ArrayTest/Main.vm ArrayTest/Mainout.vm
 ; diff -w ExpressionLessSquare/Main.xml ExpressionLessSquare/Mainout.xml
 ; diff -w ExpressionLessSquare/Square.xml ExpressionLessSquare/Squareout.xml
 ; diff -w ExpressionLessSquare/SquareGame.xml ExpressionLessSquare/SquareGameout.xml
@@ -1048,4 +1094,47 @@
 
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; NEUE TESTS FÜR PROJEKT 11
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Klappt direkt, identisch zu Average aus Projekt 10
+;(compile-jack "src/11/Average/Main.jack")
+
+; Klappt direkt
+;(compile-jack "src/11/ComplexArrays/Main.jack")
+
+; Klappt scheinbar, Inhalt der RAM-Zellen 8001-8016 identisch zur Vorgabe-VM-Datei
+; Kann die RAM-Zellen aber nur in der Online-Variante setzen
+;(compile-jack "src/11/ConvertToBin/Main.jack")
+
+
+; Das war in der gen-tab-for-func ein Fehler beim Abgleich, ob method oder function (statt Vergleich mir what war mit type)
+(do
+  ; diff 11/PongVorgabeVM/Ball.vm 11/Pong/Ball.vm
+  (compile-jack "src/11/Pong/Ball.jack")
+
+  ; diff 11/PongVorgabeVM/Bat.vm 11/Pong/Bat.vm
+  (compile-jack "src/11/Pong/Bat.jack")
+
+  ; diff 11/PongVorgabeVM/Main.vm 11/Pong/Main.vm
+  (compile-jack "src/11/Pong/Main.jack")
+
+  ; diff 11/PongVorgabeVM/PongGame.vm 11/Pong/PongGame.vm
+  (compile-jack "src/11/Pong/PongGame.jack"))
+
+
+; diff 11/Seven/Main.vm 11/SevenVorgabeVM/Main.vm
+(compile-jack "src/11/Seven/Main.jack")
+
+
+(do
+  ; diff 11/SquareVorgabeVM/Main.vm 11/Square/Main.vm
+  (compile-jack "src/11/Square/Main.jack")
+
+  ; diff 11/SquareVorgabeVM/Square.vm 11/Square/Square.vm
+  (compile-jack "src/11/Square/Square.jack")
+
+  ; diff 11/SquareVorgabeVM/SquareGame.vm 11/Square/SquareGame.vm
+  (compile-jack "src/11/Square/SquareGame.jack"))
 

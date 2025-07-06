@@ -28,43 +28,43 @@ pop pointer 0
 push this 1
 push constant 1
 eq
-if-goto IF_TRUE_G__17916
-goto IF_FALSE_G__17917
-label IF_TRUE_G__17916
+if-goto IF_TRUE_G__19350
+goto IF_FALSE_G__19351
+label IF_TRUE_G__19350
 push this 0
 call Square.moveUp 1
 pop temp 0
-label IF_FALSE_G__17917
+label IF_FALSE_G__19351
 push this 1
 push constant 2
 eq
-if-goto IF_TRUE_G__17919
-goto IF_FALSE_G__17920
-label IF_TRUE_G__17919
+if-goto IF_TRUE_G__19353
+goto IF_FALSE_G__19354
+label IF_TRUE_G__19353
 push this 0
 call Square.moveDown 1
 pop temp 0
-label IF_FALSE_G__17920
+label IF_FALSE_G__19354
 push this 1
 push constant 3
 eq
-if-goto IF_TRUE_G__17922
-goto IF_FALSE_G__17923
-label IF_TRUE_G__17922
+if-goto IF_TRUE_G__19356
+goto IF_FALSE_G__19357
+label IF_TRUE_G__19356
 push this 0
 call Square.moveLeft 1
 pop temp 0
-label IF_FALSE_G__17923
+label IF_FALSE_G__19357
 push this 1
 push constant 4
 eq
-if-goto IF_TRUE_G__17925
-goto IF_FALSE_G__17926
-label IF_TRUE_G__17925
+if-goto IF_TRUE_G__19359
+goto IF_FALSE_G__19360
+label IF_TRUE_G__19359
 push this 0
 call Square.moveRight 1
 pop temp 0
-label IF_FALSE_G__17926
+label IF_FALSE_G__19360
 push constant 5
 call Sys.wait 1
 pop temp 0
@@ -75,105 +75,105 @@ push argument 0
 pop pointer 0
 push constant 0
 pop local 1
-label WHILE_START_G__17928
+label WHILE_START_G__19362
 push local 1
 not
 not
-if-goto WHILE_END_G__17929
-label WHILE_START_G__17930
+if-goto WHILE_END_G__19363
+label WHILE_START_G__19364
 push local 0
 push constant 0
 eq
 not
-if-goto WHILE_END_G__17931
+if-goto WHILE_END_G__19365
 call Keyboard.keyPressed 0
 pop local 0
 push pointer 0
 call SquareGame.moveSquare 1
 pop temp 0
-goto WHILE_START_G__17930
-label WHILE_END_G__17931
+goto WHILE_START_G__19364
+label WHILE_END_G__19365
 push local 0
 push constant 81
 eq
-if-goto IF_TRUE_G__17932
-goto IF_FALSE_G__17933
-label IF_TRUE_G__17932
+if-goto IF_TRUE_G__19366
+goto IF_FALSE_G__19367
+label IF_TRUE_G__19366
 push constant 0
 not
 pop local 1
-label IF_FALSE_G__17933
+label IF_FALSE_G__19367
 push local 0
 push constant 90
 eq
-if-goto IF_TRUE_G__17935
-goto IF_FALSE_G__17936
-label IF_TRUE_G__17935
+if-goto IF_TRUE_G__19369
+goto IF_FALSE_G__19370
+label IF_TRUE_G__19369
 push this 0
 call Square.decSize 1
 pop temp 0
-label IF_FALSE_G__17936
+label IF_FALSE_G__19370
 push local 0
 push constant 88
 eq
-if-goto IF_TRUE_G__17938
-goto IF_FALSE_G__17939
-label IF_TRUE_G__17938
+if-goto IF_TRUE_G__19372
+goto IF_FALSE_G__19373
+label IF_TRUE_G__19372
 push this 0
 call Square.incSize 1
 pop temp 0
-label IF_FALSE_G__17939
+label IF_FALSE_G__19373
 push local 0
 push constant 131
 eq
-if-goto IF_TRUE_G__17941
-goto IF_FALSE_G__17942
-label IF_TRUE_G__17941
+if-goto IF_TRUE_G__19375
+goto IF_FALSE_G__19376
+label IF_TRUE_G__19375
 push constant 1
 pop this 1
-label IF_FALSE_G__17942
+label IF_FALSE_G__19376
 push local 0
 push constant 133
 eq
-if-goto IF_TRUE_G__17944
-goto IF_FALSE_G__17945
-label IF_TRUE_G__17944
+if-goto IF_TRUE_G__19378
+goto IF_FALSE_G__19379
+label IF_TRUE_G__19378
 push constant 2
 pop this 1
-label IF_FALSE_G__17945
+label IF_FALSE_G__19379
 push local 0
 push constant 130
 eq
-if-goto IF_TRUE_G__17947
-goto IF_FALSE_G__17948
-label IF_TRUE_G__17947
+if-goto IF_TRUE_G__19381
+goto IF_FALSE_G__19382
+label IF_TRUE_G__19381
 push constant 3
 pop this 1
-label IF_FALSE_G__17948
+label IF_FALSE_G__19382
 push local 0
 push constant 132
 eq
-if-goto IF_TRUE_G__17950
-goto IF_FALSE_G__17951
-label IF_TRUE_G__17950
+if-goto IF_TRUE_G__19384
+goto IF_FALSE_G__19385
+label IF_TRUE_G__19384
 push constant 4
 pop this 1
-label IF_FALSE_G__17951
-label WHILE_START_G__17953
+label IF_FALSE_G__19385
+label WHILE_START_G__19387
 push local 0
 push constant 0
 eq
 not
 not
-if-goto WHILE_END_G__17954
+if-goto WHILE_END_G__19388
 call Keyboard.keyPressed 0
 pop local 0
 push pointer 0
 call SquareGame.moveSquare 1
 pop temp 0
-goto WHILE_START_G__17953
-label WHILE_END_G__17954
-goto WHILE_START_G__17928
-label WHILE_END_G__17929
+goto WHILE_START_G__19387
+label WHILE_END_G__19388
+goto WHILE_START_G__19362
+label WHILE_END_G__19363
 push constant 0
 return

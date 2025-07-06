@@ -11,9 +11,9 @@ push constant 0
 return
 function Main.more 4
 push constant 0
-if-goto IF_TRUE0
-goto IF_FALSE0
-label IF_TRUE0
+if-goto IF_TRUE_G__17891
+goto IF_FALSE_G__17892
+label IF_TRUE_G__17891
 push constant 15
 call String.new 1
 push constant 115
@@ -61,8 +61,8 @@ pop temp 0
 pop pointer 1
 push temp 0
 pop that 0
-goto IF_END0
-label IF_FALSE0
+goto IF_END_G__17893
+label IF_FALSE_G__17892
 push local 0
 push local 1
 neg
@@ -77,6 +77,6 @@ push local 0
 push local 1
 or
 pop local 0
-label IF_END0
+label IF_END_G__17893
 push constant 0
 return
