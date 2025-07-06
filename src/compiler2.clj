@@ -304,7 +304,6 @@
           [tokens vm-code]) ; Kein Operator -> Ende
         [tokens vm-code])))) ; Keine Tokens mehr -> Ende
 
-; NOTE: Mostly checked
 (defn compile-simple-term
   "Returns [remaining-code vm-lines]"
   [[current & remaining :as full-code] fn-name class-name symbol-table]
@@ -344,7 +343,6 @@
     :else
     [full-code []]))
 
-; TODO: Überprüfen
 (defn compile-expression-list
   "Returns [rest-tokens vm-lines arg-count]"
   [tokens fn-name class-name symbol-table]
@@ -426,7 +424,6 @@
   [[current & remaining :as full-code] fn-name class-name symbol-table]
 
   (cond
-    ; Todo anpassen für VM-Code Generierung
     (= "let" current)  (compile-let-statement full-code fn-name class-name symbol-table)
     (= "if" current)  (compile-if-statement full-code fn-name class-name symbol-table)
     (= "while" current)  (compile-while-statement full-code fn-name class-name symbol-table)
@@ -608,7 +605,6 @@
                                                                  (map #(compile-statement % fn-name class-name symbol-table)
                                                                       if-statement-groups))
 
-        ;; Neue Labels mit korrekter Logik
         true-label  (str "IF_TRUE_" (gensym))
         false-label (str "IF_FALSE_" (gensym))
         end-label   (str "IF_END_" (gensym))
@@ -741,11 +737,6 @@
 
     [rest-after-semi vm-code]))
 
-;(compile-return-statement ["return" "i" "+" "5" ";"])
-
-
-
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; PROGRAM STRUCTURE
@@ -783,8 +774,6 @@
         statements-code (pr2 (drop-while #(not (re-matches #"let|if|while|do|return" %)) (butlast r)))
 
         ; varDecs sind uns jetzt egal, das abstrahieren wir mit "function Main.main 3" direkt, Typsicherheit haben wir nicht
-        ;var-decs-split-code (pr2 (split-coll-by-sep var-decs-code ";"))
-        ;var-decs-xml (pr2 (reduce concat (map var-dec-to-xml var-decs-split-code)))
         statements-split-code (pr2 (group-statements statements-code))
 
         statements-vm-code (flatten (map #(compile-statement % fn-name class-name symbol-table) statements-split-code))]
@@ -858,44 +847,6 @@
         useless (print 1)]
     declarations-vm-code
     ))
-
-;(compile-subroutine-dec
-;  ["function" "int" "a" "(" ")" "{" "}" "method" "int" "b" "(" "int" "x" "," "int" "y" ")" "{" "}"] [])
-
-;;;; classVarDec
-
-;(defn compile-single-class-var-dec
-;  "Returns XML for one class-var-dec"
-;  [[what type name & r]]
-;  (if (nil? what)
-;    []
-;    (let [start ["<classVarDec>\n"]
-;          what-xml ["<keyword>" what "</keyword>\n"]
-;          type-xml (if (re-matches #"int|char|boolean" type) ["<keyword>" type "</keyword>\n"] ["<identifier>" type "</identifier>\n"])
-;          var-name-xml ["<identifier>" name "</identifier>\n"]
-;          middle (loop [[t1 t2 & re] r
-;                        xml []]
-;                   (if (= ";" t1)
-;                     (into xml ["<symbol>;</symbol>\n"])
-;                     (recur re (into xml ["<symbol>" "," "</symbol>\n" "<identifier>" t2 "</identifier>\n"])))
-;                   )
-;          end ["</classVarDec>\n"]]
-;      (into start (into what-xml (into type-xml (into var-name-xml (into middle end))))))))
-
-;(compile-single-class-var-dec ["static" "int" "hello" "," "world" "," "is" "," "outdated" ";"])
-
-
-
-;(compile-parameter-list ["(" "int" "x" "," "int" "y" "," "SquareGame" "squareGame" ")"])
-
-
-
-
-
-
-
-
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; FÜR COMPILER 2 ;;;;;;;
